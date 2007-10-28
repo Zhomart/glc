@@ -10,7 +10,6 @@
  * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-#include <stdio.h>
 #include <dlfcn.h>
 #include <elfhacks.h>
 #include <alsa/asoundlib.h>
@@ -127,7 +126,7 @@ void get_real_alsa()
 	if (alsa.snd_pcm_mmap_commit)
 		return;
 err:
-	fprintf(stderr, "can't get real alsa\n");
+	fprintf(stderr, "(glc:alsa) can't get real alsa");
 	exit(1);
 }
 
@@ -135,21 +134,21 @@ int alsa_unhook_so(const char *soname)
 {
 	/* TODO cache applied unhooks => reduce fs load */
 	int ret;
-	eh_obj_t *so;
+	eh_obj_t so;
 
-	if ((ret = eh_find_obj(soname, &so)))
+	if ((ret = eh_init_obj(&so, soname)))
 		return ret;
 
 	/* don't look at 'elfhacks'... contains some serious black magic */
-	/* TODO should we apply for snd_pcm_open() as well? */
-	eh_set_rel(so, "snd_pcm_writei", alsa.snd_pcm_writei);
-	eh_set_rel(so, "snd_pcm_writen", alsa.snd_pcm_writen);
-	eh_set_rel(so, "snd_pcm_mmap_begin", alsa.snd_pcm_mmap_begin);
-	eh_set_rel(so, "snd_pcm_mmap_commit", alsa.snd_pcm_mmap_commit);
-	eh_set_rel(so, "dlsym", lib.dlsym);
-	eh_set_rel(so, "dlvsym", lib.dlvsym);
+	/* TODO should we apply to snd_pcm_open() as well? */
+	eh_set_rel(&so, "snd_pcm_writei", alsa.snd_pcm_writei);
+	eh_set_rel(&so, "snd_pcm_writen", alsa.snd_pcm_writen);
+	eh_set_rel(&so, "snd_pcm_mmap_begin", alsa.snd_pcm_mmap_begin);
+	eh_set_rel(&so, "snd_pcm_mmap_commit", alsa.snd_pcm_mmap_commit);
+	eh_set_rel(&so, "dlsym", lib.dlsym);
+	eh_set_rel(&so, "dlvsym", lib.dlvsym);
 
-	eh_free_obj(so);
+	eh_destroy_obj(&so);
 
 	return 0;
 }

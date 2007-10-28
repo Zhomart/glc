@@ -10,7 +10,6 @@
  * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <dlfcn.h>
 #include <string.h>
@@ -82,6 +81,11 @@ void init_glc()
 	load_environ();
 	util_init(mpriv.glc);
 
+	if (mpriv.glc->flags & GLC_LOG) {
+		if (util_log_init(mpriv.glc))
+			mpriv.glc->flags &= ~GLC_LOG;
+	}
+
 	if ((ret = init_buffers()))
 		goto err;
 
@@ -107,6 +111,9 @@ void init_glc()
 
 	/* TODO hook sigaction() ? */
 	if (mpriv.sighandler) {
+		util_log(mpriv.glc, GLC_INFORMATION, "main",
+			 "setting signal handler");
+
 		new_sighandler.sa_handler = signal_handler;
 		sigemptyset(&new_sighandler.sa_mask);
 		new_sighandler.sa_flags = 0;
@@ -123,6 +130,9 @@ void init_glc()
 
 	if ((ret = pthread_mutex_unlock(&lib.init_lock)))
 		goto err;
+
+	util_log_info(mpriv.glc);
+	util_log(mpriv.glc, GLC_INFORMATION, "main", "glc initialized");
 	return;
 err:
 	fprintf(stderr, "glc: %s (%d)\n", strerror(ret), ret);
@@ -154,6 +164,9 @@ int init_buffers()
 int start_glc()
 {
 	int ret;
+
+	util_log(mpriv.glc, GLC_INFORMATION, "main", "starting glc");
+
 	if (lib.running)
 		return EINVAL;
 
@@ -174,6 +187,8 @@ int start_glc()
 		return ret;
 
 	lib.running = 1;
+	util_log(mpriv.glc, GLC_INFORMATION, "main", "glc running");
+
 	return 0;
 }
 
@@ -202,7 +217,7 @@ void signal_handler(int signum)
 	         (mpriv.sigterm_handler != NULL))
 		mpriv.sigterm_handler(signum);
 
-	printf("glc: got C-c, will now exit...");
+	fprintf(stderr, "(glc:main) got C-c, will now exit...");
 	exit(0); /* may cause lots of damage... */
 }
 
@@ -230,10 +245,14 @@ void lib_close()
 	ps_buffer_destroy(mpriv.uncompressed);
 	free(mpriv.uncompressed);
 
+	if (mpriv.glc->flags & GLC_LOG)
+		util_log_close(mpriv.glc);
+
 	util_free_info(mpriv.glc);
 	util_free(mpriv.glc);
 
 	free(mpriv.glc->stream_file);
+	free(mpriv.glc->log_file);
 	glc_destroy(mpriv.glc);
 	return;
 err:
@@ -255,6 +274,18 @@ int load_environ()
 		snprintf(mpriv.glc->stream_file, 1023, getenv("GLC_FILE"), getpid());
 	else
 		snprintf(mpriv.glc->stream_file, 1023, "pid-%d.glc", getpid());
+
+	mpriv.glc->log_file = malloc(1024);
+	if (getenv("GLC_LOG_FILE"))
+		snprintf(mpriv.glc->log_file, 1023, getenv("GLC_LOG_FILE"), getpid());
+	else
+		snprintf(mpriv.glc->log_file, 1023, "/dev/stderr");
+
+	if (getenv("GLC_LOG")) {
+		mpriv.glc->log_level = atoi(getenv("GLC_LOG"));
+		if (mpriv.glc->log_level >= 0)
+			mpriv.glc->flags |= GLC_LOG;
+	}
 
 	if (getenv("GLC_SIGHANDLER"))
 		mpriv.sighandler = atoi(getenv("GLC_SIGHANDLER"));
@@ -296,29 +327,29 @@ int load_environ()
 
 void get_real_dlsym()
 {
-	eh_obj_t *libdl;
+	eh_obj_t libdl;
 
-	if (eh_find_obj("*libdl.so*", &libdl)) {
-		fprintf(stderr, "glc: libdl.so is not present in memory\n");
+	if (eh_init_obj(&libdl, "*libdl.so*")) {
+		fprintf(stderr, "(glc) libdl.so is not present in memory\n");
 		exit(1);
 	}
 
-	if (eh_find_sym(libdl, "dlopen", (void *) &lib.dlopen)) {
-		fprintf(stderr, "glc: can't get real dlopen()\n");
+	if (eh_find_sym(&libdl, "dlopen", (void *) &lib.dlopen)) {
+		fprintf(stderr, "(glc) can't get real dlopen()\n");
 		exit(1);
 	}
 
-	if (eh_find_sym(libdl, "dlsym", (void *) &lib.dlsym)) {
-		fprintf(stderr, "glc: can't get real dlsym()\n");
+	if (eh_find_sym(&libdl, "dlsym", (void *) &lib.dlsym)) {
+		fprintf(stderr, "(glc) can't get real dlsym()\n");
 		exit(1);
 	}
 
-	if (eh_find_sym(libdl, "dlvsym", (void *) &lib.dlvsym)) {
-		fprintf(stderr, "glc: can't get real dlvsym()\n");
+	if (eh_find_sym(&libdl, "dlvsym", (void *) &lib.dlvsym)) {
+		fprintf(stderr, "(glc) can't get real dlvsym()\n");
 		exit(1);
 	}
 
-	eh_free_obj(libdl);
+	eh_destroy_obj(&libdl);
 }
 
 void *wrapped_func(const char *symbol)
