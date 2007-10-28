@@ -274,7 +274,6 @@ int unpack_read_callback(glc_thread_state_t *state)
 #endif
 	}
 
-copy:
 	state->flags |= GLC_THREAD_COPY;
 	return 0;
 }
@@ -303,10 +302,8 @@ int unpack_write_callback(glc_thread_state_t *state)
 #else
 		return ENOTSUP;
 #endif
-	} else {
-		fprintf(stderr, "unsupported compression: 0x%02x\n", state->header.type);
+	} else
 		return ENOTSUP;
-	}
 
 	return 0;
 }
