@@ -232,7 +232,12 @@ err:
 	exit(1);
 }
 
-int XNextEvent(Display *display, XEvent *event_return)
+__PUBLIC int XNextEvent(Display *display, XEvent *event_return)
+{
+	return __x11_XNextEvent(display, event_return);
+}
+
+int __x11_XNextEvent(Display *display, XEvent *event_return)
 {
 	INIT_GLC
 	int ret = x11.XNextEvent(display, event_return);
@@ -240,7 +245,12 @@ int XNextEvent(Display *display, XEvent *event_return)
 	return ret;
 }
 
-int XPeekEvent(Display *display, XEvent *event_return)
+__PUBLIC int XPeekEvent(Display *display, XEvent *event_return)
+{
+	return __x11_XPeekEvent(display, event_return);
+}
+
+int __x11_XPeekEvent(Display *display, XEvent *event_return)
 {
 	INIT_GLC
 	int ret = x11.XPeekEvent(display, event_return);
@@ -248,7 +258,12 @@ int XPeekEvent(Display *display, XEvent *event_return)
 	return ret;
 }
 
-int XWindowEvent(Display *display, Window w, long event_mask, XEvent *event_return)
+__PUBLIC int XWindowEvent(Display *display, Window w, long event_mask, XEvent *event_return)
+{
+	return __x11_XWindowEvent(display, w, event_mask, event_return);
+}
+
+int __x11_XWindowEvent(Display *display, Window w, long event_mask, XEvent *event_return)
 {
 	INIT_GLC
 	int ret = x11.XWindowEvent(display, w, event_mask, event_return);
@@ -256,7 +271,12 @@ int XWindowEvent(Display *display, Window w, long event_mask, XEvent *event_retu
 	return ret;
 }
 
-Bool XCheckWindowEvent(Display *display, Window w, long event_mask, XEvent *event_return)
+__PUBLIC Bool XCheckWindowEvent(Display *display, Window w, long event_mask, XEvent *event_return)
+{
+	return __x11_XCheckWindowEvent(display, w, event_mask, event_return);
+}
+
+Bool __x11_XCheckWindowEvent(Display *display, Window w, long event_mask, XEvent *event_return)
 {
 	Bool ret = x11.XCheckWindowEvent(display, w, event_mask, event_return);
 	if (ret)
@@ -264,7 +284,12 @@ Bool XCheckWindowEvent(Display *display, Window w, long event_mask, XEvent *even
 	return ret;
 }
 
-int XMaskEvent(Display *display, long event_mask, XEvent *event_return)
+__PUBLIC int XMaskEvent(Display *display, long event_mask, XEvent *event_return)
+{
+	return __x11_XMaskEvent(display, event_mask, event_return);
+}
+
+int __x11_XMaskEvent(Display *display, long event_mask, XEvent *event_return)
 {
 	INIT_GLC
 	int ret = x11.XMaskEvent(display, event_mask, event_return);
@@ -272,7 +297,12 @@ int XMaskEvent(Display *display, long event_mask, XEvent *event_return)
 	return ret;
 }
 
-Bool XCheckMaskEvent(Display *display, long event_mask, XEvent *event_return)
+__PUBLIC Bool XCheckMaskEvent(Display *display, long event_mask, XEvent *event_return)
+{
+	return __x11_XCheckMaskEvent(display, event_mask, event_return);
+}
+
+Bool __x11_XCheckMaskEvent(Display *display, long event_mask, XEvent *event_return)
 {
 	Bool ret = x11.XCheckMaskEvent(display, event_mask, event_return);
 	if (ret)
@@ -280,7 +310,12 @@ Bool XCheckMaskEvent(Display *display, long event_mask, XEvent *event_return)
 	return ret;
 }
 
-Bool XCheckTypedEvent(Display *display, int event_type, XEvent *event_return)
+__PUBLIC Bool XCheckTypedEvent(Display *display, int event_type, XEvent *event_return)
+{
+	return __x11_XCheckTypedEvent(display, event_type, event_return);
+}
+
+Bool __x11_XCheckTypedEvent(Display *display, int event_type, XEvent *event_return)
 {
 	Bool ret = x11.XCheckTypedEvent(display, event_type, event_return);
 	if (ret)
@@ -288,7 +323,12 @@ Bool XCheckTypedEvent(Display *display, int event_type, XEvent *event_return)
 	return ret;
 }
 
-Bool XCheckTypedWindowEvent(Display *display, Window w, int event_type, XEvent *event_return)
+__PUBLIC Bool XCheckTypedWindowEvent(Display *display, Window w, int event_type, XEvent *event_return)
+{
+	return __x11_XCheckTypedWindowEvent(display, w, event_type, event_return);
+}
+
+Bool __x11_XCheckTypedWindowEvent(Display *display, Window w, int event_type, XEvent *event_return)
 {
 	Bool ret = x11.XCheckTypedWindowEvent(display, w, event_type, event_return);
 	if (ret)
@@ -296,7 +336,12 @@ Bool XCheckTypedWindowEvent(Display *display, Window w, int event_type, XEvent *
 	return ret;
 }
 
-int XIfEvent(Display *display, XEvent *event_return, Bool ( *predicate)(), XPointer arg)
+__PUBLIC int XIfEvent(Display *display, XEvent *event_return, Bool (*predicate)(), XPointer arg)
+{
+	return __x11_XIfEvent(display, event_return, predicate, arg);
+}
+
+int __x11_XIfEvent(Display *display, XEvent *event_return, Bool (*predicate)(), XPointer arg)
 {
 	INIT_GLC
 	int ret = x11.XIfEvent(display, event_return, predicate, arg);
@@ -304,7 +349,12 @@ int XIfEvent(Display *display, XEvent *event_return, Bool ( *predicate)(), XPoin
 	return ret;
 }
 
-Bool XCheckIfEvent(Display *display, XEvent *event_return, Bool ( *predicate)(), XPointer arg)
+__PUBLIC Bool XCheckIfEvent(Display *display, XEvent *event_return, Bool (*predicate)(), XPointer arg)
+{
+	return __x11_XCheckIfEvent(display, event_return, predicate, arg);
+}
+
+Bool __x11_XCheckIfEvent(Display *display, XEvent *event_return, Bool (*predicate)(), XPointer arg)
 {
 	Bool ret = x11.XCheckIfEvent(display, event_return, predicate, arg);
 	if (ret)
@@ -312,7 +362,12 @@ Bool XCheckIfEvent(Display *display, XEvent *event_return, Bool ( *predicate)(),
 	return ret;
 }
 
-int XPeekIfEvent(Display *display, XEvent *event_return, Bool ( *predicate)(), XPointer arg)
+__PUBLIC int XPeekIfEvent(Display *display, XEvent *event_return, Bool (*predicate)(), XPointer arg)
+{
+	return __x11_XPeekIfEvent(display, event_return, predicate, arg);
+}
+
+int __x11_XPeekIfEvent(Display *display, XEvent *event_return, Bool (*predicate)(), XPointer arg)
 {
 	INIT_GLC
 	int ret = x11.XPeekIfEvent(display, event_return, predicate, arg);

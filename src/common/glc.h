@@ -6,7 +6,7 @@
  */
 
 /* glc.h -- OpenGL video capture tool
-  version 0.3.9, October 28th, 2007
+  version 0.3.10, October 29th, 2007
 
   Copyright (C) 2007 Pyry Haulos
 
@@ -46,6 +46,11 @@
  * \addtogroup common
  *  \{
  */
+
+/** always export this object  */
+#define __PUBLIC __attribute__ ((visibility ("default")))
+/** always hide this object */
+#define __PRIVATE __attribute__ ((visibility ("hidden")))
 
 /** stream version */
 #define GLC_STREAM_VERSION              0x2

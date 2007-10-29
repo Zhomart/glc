@@ -60,6 +60,8 @@ int opengl_init(glc_t *glc)
 	opengl.glc->flags |= GLC_SCALE;
 	opengl.started = 0;
 
+	util_log(opengl.glc, GLC_DEBUG, "opengl", "initializing");
+
 	/* load environment variables */
 	if (getenv("GLC_FPS"))
 		opengl.glc->fps = atof(getenv("GLC_FPS"));
@@ -180,6 +182,8 @@ int opengl_close()
 	if (!opengl.started)
 		return 0;
 
+	util_log(opengl.glc, GLC_DEBUG, "opengl", "closing");
+
 	gl_capture_close(opengl.gl);
 
 	if (opengl.glc->flags & GLC_SCALE) {
@@ -235,7 +239,12 @@ err:
 	exit(1);
 }
 
-GLXextFuncPtr glXGetProcAddressARB(const GLubyte *proc_name)
+__PUBLIC GLXextFuncPtr glXGetProcAddressARB(const GLubyte *proc_name)
+{
+	return __opengl_glXGetProcAddressARB(proc_name);
+}
+
+GLXextFuncPtr __opengl_glXGetProcAddressARB(const GLubyte *proc_name)
 {
 	INIT_GLC
 
@@ -246,7 +255,12 @@ GLXextFuncPtr glXGetProcAddressARB(const GLubyte *proc_name)
 	return opengl.glXGetProcAddressARB(proc_name);
 }
 
-void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
+__PUBLIC void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
+{
+	return __opengl_glXSwapBuffers(dpy, drawable);
+}
+
+void __opengl_glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
 	INIT_GLC
 
@@ -261,7 +275,12 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 		opengl.glXSwapBuffers(dpy, drawable);
 }
 
-void glFinish(void)
+__PUBLIC void glFinish(void)
+{
+	__opengl_glFinish();
+}
+
+void __opengl_glFinish(void)
 {
 	INIT_GLC
 
