@@ -37,12 +37,17 @@ struct util_private_s {
 	glc_stime_t timediff;
 	FILE *log_file;
 	pthread_mutex_t log_mutex;
+
+	glc_audio_i audio_streams;
+	pthread_mutex_t audio_streams_mutex;
 };
 
 int util_app_name(char **path, u_int32_t *path_size);
 int util_utc_date(char **date, u_int32_t *date_size);
 
 void util_write_time(glc_t *glc, FILE *stream);
+
+glc_utime_t util_real_time(glc_t *glc);
 
 /**
  * \brief create glc_t
@@ -92,7 +97,9 @@ int util_init(glc_t *glc)
 
 	util->glc = glc;
 	gettimeofday(&util->init_time, NULL);
+	util->audio_streams = 0;
 	pthread_mutex_init(&util->log_mutex, NULL);
+	pthread_mutex_init(&util->audio_streams_mutex, NULL);
 
 	glc->util = util;
 	return 0;
@@ -107,19 +114,30 @@ int util_free(glc_t *glc)
 {
 	struct util_private_s *util = (struct util_private_s *) glc->util;
 	pthread_mutex_destroy(&util->log_mutex);
+	pthread_mutex_destroy(&util->audio_streams_mutex);
 	free(util);
 	return 0;
 }
 
 /**
- * \brief current time in microseconds
+ * \brief current time in microseconds with timediff applied
  *
  * Time is absolute time - startup time - active time difference.
  * \see util_timediff()
  * \param glc glc
  * \return current relative time
  */
-glc_utime_t util_timestamp(glc_t *glc)
+glc_utime_t util_time(glc_t *glc)
+{
+	return util_real_time(glc) - ((struct util_private_s *) glc->util)->timediff;
+}
+
+/**
+ * \brief current time in microseconds without timediff
+ * \param glc glc
+ * \return time elapsed since initialization
+ */
+glc_utime_t util_real_time(glc_t *glc)
 {
 	struct util_private_s *util = (struct util_private_s *) glc->util;
 	struct timeval tv;
@@ -134,7 +152,7 @@ glc_utime_t util_timestamp(glc_t *glc)
 		tv.tv_usec += 1000000;
 	}
 
-	return (glc_utime_t) (tv.tv_sec * 1000000 + (glc_utime_t) tv.tv_usec - util->timediff);
+	return (glc_utime_t) (tv.tv_sec * 1000000 + (glc_utime_t) tv.tv_usec);
 }
 
 /**
@@ -253,7 +271,7 @@ int util_free_info(glc_t *glc)
  *
  * Currently this function resolves /proc/self/exe.
  * \param path returned application name
- * \param path_size size of name string, including \0
+ * \param path_size size of name string, including 0
  * \return 0 on success otherwise an error code
  */
 int util_app_name(char **path, u_int32_t *path_size)
@@ -330,6 +348,23 @@ int util_write_end_of_stream(glc_t *glc, ps_buffer_t *to)
 
 finish:
 	return ret;
+}
+
+/**
+ * \brief give unique audio stream
+ * \param glc glc
+ * \return unique audio stream number
+ */
+glc_audio_i util_audio_stream_id(glc_t *glc)
+{
+	struct util_private_s *util = glc->util;
+	glc_audio_i id;
+
+	pthread_mutex_lock(&util->audio_streams_mutex);
+	id = ++util->audio_streams;
+	pthread_mutex_unlock(&util->audio_streams_mutex);
+
+	return id;
 }
 
 /**
@@ -448,7 +483,7 @@ void util_log_info(glc_t *glc)
 
 void util_write_time(glc_t *glc, FILE *stream)
 {
-	fprintf(stream, "[%7.2fs]", (double) util_timestamp(glc) / 1000000.0);
+	fprintf(stream, "[%7.2fs]", (double) util_real_time(glc) / 1000000.0);
 }
 
 /**  \} */

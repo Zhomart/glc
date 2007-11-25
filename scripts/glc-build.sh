@@ -44,6 +44,8 @@ echo "#include <stdio.h>
 	|| die "Can't compile (Ubuntu users: apt-get install build-essential)"
 [ -e "/usr/include/X11/X.h" -a -e "/usr/include/X11/Xlib.h" ] \
 	|| die "Missing X11 headers (Ubuntu users: apt-get install libx11-dev)"
+[ -e "/usr/include/X11/extensions/xf86vmode.h" ] \
+	|| die "Missing XF86VidMode headers (Ubuntu users: apt-get install libxxf86vm-dev)"
 [ -e "/usr/include/GL/gl.h" -a -e "/usr/include/GL/glx.h" ] \
 	|| die "Missing OpenGL headers (Ubuntu users: apt-get install libgl1-mesa-dev)"
 [ -e "/usr/include/alsa/asoundlib.h" ] \
@@ -90,15 +92,38 @@ ask-prompt
 read LDFLAGS
 [ "${LDFLAGS}" == "" ] && LDFLAGS="-Wl,-O1"
 
-info "Fetching sources..."
-download "http://nullkey.ath.cx/elfhacks/elfhacks.tar.gz"
-download "http://nullkey.ath.cx/packetstream/packetstream.tar.gz"
-download "http://nullkey.ath.cx/glc/glc.tar.gz"
+USE_GIT="n"
+ask "Use git (y/n)"
+ask "  (git contains latest unstable development version)"
+ask-prompt
+read USE_GIT
 
-info "Unpacking sources..."
-unpack "elfhacks.tar.gz"
-unpack "packetstream.tar.gz"
-unpack "glc.tar.gz"
+if [ "${USE_GIT}" == "y" ]; then
+	GIT_CLONE=`which git-clone 2> /dev/null`
+	if [ -x "${GIT_CLONE}" ]; then
+		$GIT_CLONE "git://nullkey.ath.cx/~pyry/glc" \
+			|| die "Can't clone glc"
+		$GIT_CLONE "git://nullkey.ath.cx/~pyry/glc-support" \
+			|| die "Can't clone glc-support"
+		$GIT_CLONE "git://nullkey.ath.cx/~pyry/elfhacks" \
+			|| die "Can't clone elfhacks"
+		$GIT_CLONE "git://nullkey.ath.cx/~pyry/packetstream" \
+			|| die "Can't clone packetstream"
+		cd glc && ln -s ../glc-support ./support && cd ..
+	else
+		die "git-clone not found (Ubuntu users: apt-get install git-core)"
+	fi
+else
+	info "Fetching sources..."
+	download "http://nullkey.ath.cx/elfhacks/elfhacks.tar.gz"
+	download "http://nullkey.ath.cx/packetstream/packetstream.tar.gz"
+	download "http://nullkey.ath.cx/glc/glc.tar.gz"
+	
+	info "Unpacking sources..."
+	unpack "elfhacks.tar.gz"
+	unpack "packetstream.tar.gz"
+	unpack "glc.tar.gz"
+fi
 
 info "Building elfhacks..."
 cd elfhacks
@@ -196,17 +221,29 @@ RDIR=`echo "${DESTDIR}" | sed 's/ /\\ /g'`
 
 info "If you want to remove glc, execute:"
 if [ $BUILD64 == 1 ]; then
-	echo "${RM} ${RDIR}/usr/lib64/libglc.so* \\"
+	echo "${RM} \\"
+	echo "${RDIR}/usr/lib64/libglc-core.so* \\"
 	echo "${RDIR}/usr/lib64/libglc-capture.so* \\"
+	echo "${RDIR}/usr/lib64/libglc-play.so* \\"
+	echo "${RDIR}/usr/lib64/libglc-export.so* \\"
+	echo "${RDIR}/usr/lib64/libglc-hook.so* \\"
 	echo "${RDIR}/usr/lib64/libelfhacks.so* \\"
 	echo "${RDIR}/usr/lib64/libpacketstream.so* \\"
-	echo "${RDIR}/usr/lib32/libglc.so* \\"
+	echo "${RDIR}/usr/lib64/libelfhacks.so* \\"
+	echo "${RDIR}/usr/lib32/libglc-core.so* \\"
 	echo "${RDIR}/usr/lib32/libglc-capture.so* \\"
+	echo "${RDIR}/usr/lib32/libglc-play.so* \\"
+	echo "${RDIR}/usr/lib32/libglc-export.so* \\"
+	echo "${RDIR}/usr/lib32/libglc-hook.so* \\"
 	echo "${RDIR}/usr/lib32/libelfhacks.so* \\"
 	echo "${RDIR}/usr/lib32/libpacketstream.so* \\"
 else
-	echo "${RM} ${RDIR}/usr/lib/libglc.so* \\"
+	echo "${RM} \\"
+	echo "${RDIR}/usr/lib/libglc-core.so* \\"
 	echo "${RDIR}/usr/lib/libglc-capture.so* \\"
+	echo "${RDIR}/usr/lib/libglc-play.so* \\"
+	echo "${RDIR}/usr/lib/libglc-export.so* \\"
+	echo "${RDIR}/usr/lib/libglc-hook.so* \\"
 	echo "${RDIR}/usr/lib/libelfhacks.so* \\"
 	echo "${RDIR}/usr/lib/libpacketstream.so* \\"
 fi

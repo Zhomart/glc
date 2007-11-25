@@ -38,7 +38,7 @@ __PUBLIC __attribute__((format(printf, 4, 5)))
 	void util_log(glc_t *glc, int level, const char *module, const char *format, ...);
 __PUBLIC int util_log_close(glc_t *glc);
 
-__PUBLIC glc_utime_t util_timestamp(glc_t *glc);
+__PUBLIC glc_utime_t util_time(glc_t *glc);
 __PUBLIC int util_timediff(glc_t *glc, glc_stime_t diff);
 
 __PUBLIC int util_load_info(glc_t *glc, const char *filename);
@@ -49,6 +49,8 @@ __PUBLIC int util_free_info(glc_t *glc);
 __PUBLIC void util_log_info(glc_t *glc);
 
 __PUBLIC long int util_cpus();
+
+__PUBLIC glc_audio_i util_audio_stream_id(glc_t *glc);
 
 __PUBLIC int util_write_end_of_stream(glc_t *glc, ps_buffer_t *to);
 

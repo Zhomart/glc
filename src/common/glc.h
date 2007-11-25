@@ -6,7 +6,7 @@
  */
 
 /* glc.h -- OpenGL video capture tool
-  version 0.3.11, November 10th, 2007
+  version 0.4.0, November 25th, 2007
 
   Copyright (C) 2007 Pyry Haulos
 
@@ -36,8 +36,11 @@
 #include <semaphore.h>
 
 /**
- * \defgroup lib wrapper library
- * \defgroup stream stream processing
+ * \defgroup hook wrapper library
+ * \defgroup capture capture
+ * \defgroup core core
+ * \defgroup export export format filters
+ * \defgroup play playback
  * \defgroup common common utilities and data structures
  * \defgroup support optional support libraries
  */
@@ -142,6 +145,8 @@ typedef u_int32_t glc_flags_t;
 #define GLC_NOERR                       0x10000
 /** override color correction values */
 #define GLC_OVERRIDE_COLOR_CORRECTION   0x20000
+/** scale to specified size */
+#define GLC_SCALE_SIZE                  0x40000
 
 /**
  * \brief stream info structure
@@ -189,10 +194,15 @@ typedef struct {
 	int log_level;
 	/** fps */
 	double fps;
-	/** scale for rescaling */
-	double scale;
 	/** playback/export silence threshold in microseconds */
 	glc_utime_t silence_threshold;
+
+	/** scale factor for rescaling */
+	double scale;
+	/** scale width */
+	unsigned int scale_width;
+	/** scale height */
+	unsigned int scale_height;
 
 	/** crop width */
 	unsigned int crop_width;

@@ -18,21 +18,20 @@
 
 #include "common/glc.h"
 #include "common/util.h"
-#include "stream/file.h"
-#include "stream/pack.h"
-#include "stream/img.h"
-#include "stream/info.h"
-#include "stream/wav.h"
-#include "stream/demux.h"
-#include "stream/ycbcr.h"
-#include "stream/yuv4mpeg.h"
-#include "stream/rgb.h"
-#include "stream/color.h"
 
-/**
- * \defgroup play stream player
- *  \{
- */
+#include "core/file.h"
+#include "core/pack.h"
+#include "core/rgb.h"
+#include "core/color.h"
+#include "core/info.h"
+#include "core/ycbcr.h"
+#include "core/scale.h"
+
+#include "export/img.h"
+#include "export/wav.h"
+#include "export/yuv4mpeg.h"
+
+#include "play/demux.h"
 
 int show_info_value(glc_t *glc, const char *value);
 
@@ -43,7 +42,7 @@ int main(int argc, char *argv[])
 	ps_bufferattr_t attr;
 	const char *summary_val = NULL;
 	int play, opt, option_index, img, info, show_stats, wav, yuv4mpeg;
-	ps_buffer_t *uncompressed, *compressed, *ycbcr, *rgb, *color;
+	ps_buffer_t *uncompressed, *compressed, *ycbcr, *rgb, *color, *scale;
 
 	struct option long_options[] = {
 		{"info",		1, NULL, 'i'},
@@ -52,6 +51,7 @@ int main(int argc, char *argv[])
 		{"yuv4mpeg",		1, NULL, 'y'},
 		{"out",			1, NULL, 'o'},
 		{"fps",			1, NULL, 'f'},
+		{"resize",		1, NULL, 'r'},
 		{"adjust",		1, NULL, 'g'},
 		{"silence",		1, NULL, 'l'},
 		{"compressed",		1, NULL, 'c'},
@@ -65,12 +65,13 @@ int main(int argc, char *argv[])
 	option_index = 0;
 
 	img = info = wav = 0;
-	ycbcr = rgb = color = NULL;
+	ycbcr = rgb = color = scale = NULL;
 	play = 1;
 
 	img = info = show_stats = yuv4mpeg = 0;
 	glc_create(&glc);
 	glc->scale = 1;
+	glc->scale_width = glc->scale_height = 0;
 	glc->flags = 0;
 	glc->fps = 0;
 	glc->filename_format = NULL;
@@ -85,7 +86,7 @@ int main(int argc, char *argv[])
 	glc->green_gamma = 1.0;
 	glc->blue_gamma = 1.0;
 
-	while ((opt = getopt_long(argc, argv, "i:a:p:y:o:f:g:l:c:u:s:v:th",
+	while ((opt = getopt_long(argc, argv, "i:a:p:y:o:f:r:g:l:c:u:s:v:th",
 				  long_options, &optind)) != -1) {
 		switch (opt) {
 		case 'i':
@@ -120,6 +121,18 @@ int main(int argc, char *argv[])
 			glc->fps = atof(optarg);
 			if (glc->fps <= 0)
 				goto usage;
+			break;
+		case 'r':
+			if (strstr(optarg, "x")) {
+				sscanf(optarg, "%ux%u", &glc->scale_width, &glc->scale_height);
+				if ((!glc->scale_width) | (!glc->scale_height))
+					goto usage;
+				glc->flags |= GLC_SCALE_SIZE;
+			} else {
+				glc->scale = atof(optarg);
+				if (glc->scale <= 0)
+					goto usage;
+			}
 			break;
 		case 'g':
 			glc->flags |= GLC_OVERRIDE_COLOR_CORRECTION;
@@ -196,6 +209,9 @@ int main(int argc, char *argv[])
 	if ((yuv4mpeg) | (img) | (play)) {
 		color = malloc(sizeof(ps_buffer_t));
 		ps_buffer_init(color, &attr);
+
+		scale = malloc(sizeof(ps_buffer_t));
+		ps_buffer_init(scale, &attr);
 	}
 
 	if (yuv4mpeg) {
@@ -215,6 +231,7 @@ int main(int argc, char *argv[])
 	if (img) {
 		rgb_init(glc, uncompressed, rgb);
 		color_init(glc, rgb, color);
+		scale_init(glc, color, scale);
 		img_init(glc, color);
 	} else if (info)
 		info_init(glc, uncompressed);
@@ -222,12 +239,14 @@ int main(int argc, char *argv[])
 		wav_init(glc, uncompressed);
 	else if (yuv4mpeg) {
 		color_init(glc, uncompressed, color);
-		ycbcr_init(glc, color, ycbcr);
+		scale_init(glc, color, scale);
+		ycbcr_init(glc, scale, ycbcr);
 		yuv4mpeg_init(glc, ycbcr);
 	} else { /* play */
 		rgb_init(glc, uncompressed, rgb);
 		color_init(glc, rgb, color);
-		demux_init(glc, color);
+		scale_init(glc, color, scale);
+		demux_init(glc, scale);
 	}
 
 	unpack_init(glc, compressed, uncompressed);
@@ -236,8 +255,10 @@ int main(int argc, char *argv[])
 		ps_buffer_cancel(uncompressed);
 	}
 
-	if ((yuv4mpeg) | (img) | (play))
+	if ((yuv4mpeg) | (img) | (play)) {
 		sem_wait(&glc->signal[GLC_SIGNAL_COLOR_FINISHED]);
+		sem_wait(&glc->signal[GLC_SIGNAL_SCALE_FINISHED]);
+	}
 
 	if (img) {
 		sem_wait(&glc->signal[GLC_SIGNAL_IMG_FINISHED]);
@@ -274,6 +295,9 @@ int main(int argc, char *argv[])
 	if ((play) | (img) | (yuv4mpeg)) {
 		ps_buffer_destroy(color);
 		free(color);
+
+		ps_buffer_destroy(scale);
+		free(scale);
 	}
 	if (play) {
 		ps_buffer_destroy(rgb);
@@ -301,6 +325,7 @@ usage:
 	       "  -y, --yuv4mpeg=NUM       save video stream NUM in yuv4mpeg format\n"
 	       "  -o, --out=FILE           write to FILE\n"
 	       "  -f, --fps=FPS            save images or video at FPS\n"
+	       "  -r, --resize=VAL         resize pictures with scale factor VAL or WxH\n"
 	       "  -g, --color=ADJUST       adjust colors\n"
 	       "                             format is brightness;contrast;red;green;blue\n"
 	       "  -l, --silence=SECONDS    audio silence threshold in seconds\n"
@@ -336,5 +361,3 @@ int show_info_value(glc_t *glc, const char *value)
 		return EXIT_FAILURE;
 	return EXIT_SUCCESS;
 }
-
-/**  \} */
