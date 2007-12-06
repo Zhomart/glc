@@ -3,11 +3,14 @@
  * \brief OpenGL capture
  * \author Pyry Haulos <pyry.haulos@gmail.com>
  * \date 2007
+ * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-/* gl_capture.c -- OpenGL capture
- * Copyright (C) 2007 Pyry Haulos
- * For conditions of distribution and use, see copyright notice in glc.h
+/**
+ * \addtogroup capture
+ *  \{
+ * \defgroup gl_capture OpenGL capture
+ *  \{
  */
 
 #include <stdio.h>
@@ -28,16 +31,6 @@
 #include "../common/glc.h"
 #include "../common/util.h"
 #include "gl_capture.h"
-
-/**
- * \addtogroup capture
- *  \{
- */
-
-/**
- * \defgroup gl_capture OpenGL capture
- *  \{
- */
 
 typedef void (*FuncPtr)(void);
 typedef FuncPtr (*GLXGetProcAddressProc)(const GLubyte *procName);
@@ -216,7 +209,7 @@ int gl_capture_get_geometry(struct gl_capture_private_s *gl_capture, Display *dp
 
 int gl_capture_update_screen(struct gl_capture_private_s *gl_capture, struct gl_capture_ctx_s *ctx)
 {
-	/* TODO fix this! */
+	/** \todo figure out real screen */
 	ctx->screen = DefaultScreen(ctx->dpy);
 	return 0;
 }
@@ -700,7 +693,7 @@ int gl_capture_update_color(struct gl_capture_private_s *gl_capture, struct gl_c
 	msg.green = gamma.green;
 	msg.blue = gamma.blue;
 
-	/** \TODO figure out brightness and contrast */
+	/** \todo figure out brightness and contrast */
 	msg.brightness = msg.contrast = 0;
 
 	util_log(gl_capture->glc, GLC_INFORMATION, "gl_capture",

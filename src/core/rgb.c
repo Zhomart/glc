@@ -3,11 +3,14 @@
  * \brief convert Y'CbCr to BGR
  * \author Pyry Haulos <pyry.haulos@gmail.com>
  * \date 2007
+ * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-/* rgb.c -- convert Y'CbCr to BGR
- * Copyright (C) 2007 Pyry Haulos
- * For conditions of distribution and use, see copyright notice in glc.h
+/**
+ * \addtogroup core
+ *  \{
+ * \defgroup rgb convert Y'CbCr to BGR
+ *  \{
  */
 
 #include <stdlib.h>
@@ -21,16 +24,6 @@
 #include "../common/thread.h"
 #include "../common/util.h"
 #include "rgb.h"
-
-/**
- * \addtogroup core
- *  \{
- */
-
-/**
- * \defgroup rgb convert Y'CbCr to BGR
- *  \{
- */
 
 /*
 R'd = Y' + (Cr - 128) * (2 - 2 * Kr)
@@ -62,7 +55,7 @@ B'd = Y' + (Cb - 128) * (2 - 2 * Kb)
 	  (((Gd) >> (8 - LOOKUP_BITS)) << LOOKUP_BITS) + \
 	  ( (Bd) >> (8 - LOOKUP_BITS))) * 3)
 
-/* FIXME why do overflows occur? */
+/** \note unfortunately overflows will occur */
 #define CLAMP_256(val) \
 	(val) < 0 ? 0 : ((val) > 255 ? 255 : (val))
 

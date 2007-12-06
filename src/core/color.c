@@ -3,11 +3,14 @@
  * \brief color correction
  * \author Pyry Haulos <pyry.haulos@gmail.com>
  * \date 2007
+ * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-/* color.c -- color correction
- * Copyright (C) 2007 Pyry Haulos
- * For conditions of distribution and use, see copyright notice in glc.h
+/**
+ * \addtogroup core
+ *  \{
+ * \defgroup color color correction
+ *  \{
  */
 
 #include <stdlib.h>
@@ -23,16 +26,6 @@
 #include "../common/thread.h"
 #include "../common/util.h"
 #include "color.h"
-
-/**
- * \addtogroup core
- *  \{
- */
-
-/**
- * \defgroup color color correction
- *  \{
- */
 
 #define LOOKUP_BITS 8
 #define YCBCR_LOOKUP_POS(Y, Cb, Cr) \
@@ -388,7 +381,6 @@ void color_bgr(struct color_private_s *color,
 	}
 }
 
-/* TODO something more sane... */
 #define CLAMP_256(val) \
 	(val) < 0 ? 0 : ((val) > 255 ? 255 : (val))
 

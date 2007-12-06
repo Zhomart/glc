@@ -3,11 +3,14 @@
  * \brief alsa wrapper
  * \author Pyry Haulos <pyry.haulos@gmail.com>
  * \date 2007
+ * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-/* alsa.c -- alsa wrapper
- * Copyright (C) 2007 Pyry Haulos
- * For conditions of distribution and use, see copyright notice in glc.h
+/**
+ * \addtogroup hook
+ *  \{
+ * \defgroup alsa alsa wrapper
+ *  \{
  */
 
 #include <dlfcn.h>
@@ -18,17 +21,6 @@
 #include "lib.h"
 #include "../capture/audio_hook.h"
 #include "../capture/audio_capture.h"
-
-/**
- * \addtogroup hook
- *  \{
- */
-
-/**
- * \defgroup alsa alsa wrapper
- *  \{
- */
-
 
 struct alsa_capture_stream_s {
 	void *capture;
@@ -59,6 +51,7 @@ struct alsa_private_s {
 };
 
 __PRIVATE struct alsa_private_s alsa;
+__PRIVATE int alsa_loaded = 0;
 
 __PRIVATE void get_real_alsa();
 
@@ -80,8 +73,7 @@ int alsa_init(glc_t *glc)
 	if (getenv("GLC_AUDIO_SKIP")) {
 		if (atoi(getenv("GLC_AUDIO_SKIP")))
 			alsa.glc->flags |= GLC_AUDIO_ALLOW_SKIP;
-	} else
-		alsa.glc->flags |= GLC_AUDIO_ALLOW_SKIP;
+	}
 
 	if (getenv("GLC_AUDIO_RECORD"))
 		alsa_parse_capture_cfg(getenv("GLC_AUDIO_RECORD"));
@@ -142,6 +134,9 @@ int alsa_start(ps_buffer_t *buffer)
 
 	if (alsa.started)
 		return EINVAL;
+
+	/* make sure libasound.so does not call our hooked functions */
+	alsa_unhook_so("*libasound.so*");
 
 	if (alsa.capture) {
 		if (!(alsa.audio_hook = audio_hook_init(alsa.glc, buffer)))
@@ -216,6 +211,9 @@ void get_real_alsa()
 	if (!lib.dlopen)
 		get_real_dlsym();
 
+	if (alsa_loaded)
+		return;
+
 	alsa.libasound_handle = lib.dlopen("libasound.so", RTLD_LAZY);
 	if (!alsa.libasound_handle)
 		goto err;
@@ -242,8 +240,11 @@ void get_real_alsa()
 	alsa.snd_pcm_mmap_commit =
 	  (snd_pcm_sframes_t (*)(snd_pcm_t *, snd_pcm_uframes_t, snd_pcm_uframes_t))
 	    lib.dlsym(alsa.libasound_handle, "snd_pcm_mmap_commit");
-	if (alsa.snd_pcm_mmap_commit)
-		return;
+	if (!alsa.snd_pcm_mmap_commit)
+		goto err;
+
+	alsa_loaded = 1;
+	return;
 err:
 	fprintf(stderr, "(glc:alsa) can't get real alsa");
 	exit(1);
@@ -253,6 +254,9 @@ int alsa_unhook_so(const char *soname)
 {
 	int ret;
 	eh_obj_t so;
+
+	if (!alsa_loaded)
+		get_real_alsa(); /* make sure we have real functions */
 
 	if ((ret = eh_find_obj(&so, soname)))
 		return ret;

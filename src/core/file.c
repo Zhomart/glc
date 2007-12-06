@@ -3,14 +3,15 @@
  * \brief file io
  * \author Pyry Haulos <pyry.haulos@gmail.com>
  * \date 2007
- */
-
-/* file.c -- file io
- * Copyright (C) 2007 Pyry Haulos
  * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-#define _FILE_OFFSET_BITS 64
+/**
+ * \addtogroup core
+ *  \{
+ * \defgroup file file io
+ *  \{
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,16 +25,6 @@
 #include "../common/thread.h"
 #include "../common/util.h"
 #include "file.h"
-
-/**
- * \addtogroup core
- *  \{
- */
-
-/**
- * \defgroup file file io
- *  \{
- */
 
 struct file_private_s {
 	glc_t *glc;

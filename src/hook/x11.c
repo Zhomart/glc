@@ -3,11 +3,14 @@
  * \brief libX11 wrapper
  * \author Pyry Haulos <pyry.haulos@gmail.com>
  * \date 2007
+ * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-/* x11.c -- libX11 wrapper
- * Copyright (C) 2007 Pyry Haulos
- * For conditions of distribution and use, see copyright notice in glc.h
+/**
+ * \addtogroup hook
+ *  \{
+ * \defgroup x11 libX11 wrapper
+ *  \{
  */
 
 #include <dlfcn.h>
@@ -19,16 +22,6 @@
 #include "../common/util.h"
 #include "lib.h"
 #include "../capture/gl_capture.h"
-
-/**
- * \addtogroup hook
- *  \{
- */
-
-/**
- * \defgroup x11 libX11 wrapper
- *  \{
- */
 
 struct x11_private_s {
 	glc_t *glc;
@@ -93,7 +86,7 @@ int x11_init(glc_t *glc)
 
 int x11_parse_hotkey(const char *hotkey)
 {
-	/* FIXME this is ugly... */
+	/** \todo better parsing */
 	int c, s;
 	x11.key_mask = 0;
 	c = s = 0;

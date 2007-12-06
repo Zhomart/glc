@@ -3,11 +3,14 @@
  * \brief utility functions
  * \author Pyry Haulos <pyry.haulos@gmail.com>
  * \date 2007
+ * For conditions of distribution and use, see copyright notice in glc.h
  */
 
-/* util.c -- utility functions
- * Copyright (C) 2007 Pyry Haulos
- * For conditions of distribution and use, see copyright notice in glc.h
+/**
+ * \addtogroup common
+ *  \{
+ * \defgroup util utility functions
+ *  \{
  */
 
 #include <stdlib.h>
@@ -22,11 +25,6 @@
 
 #include "glc.h"
 #include "util.h"
-
-/**
- * \addtogroup util
- *  \{
- */
 
 /**
  * \brief util private structure
@@ -45,7 +43,7 @@ struct util_private_s {
 int util_app_name(char **path, u_int32_t *path_size);
 int util_utc_date(char **date, u_int32_t *date_size);
 
-void util_write_time(glc_t *glc, FILE *stream);
+void util_write_log_prefix(glc_t *glc, FILE *stream, int level, const char *module);
 
 glc_utime_t util_real_time(glc_t *glc);
 
@@ -295,7 +293,7 @@ int util_app_name(char **path, u_int32_t *path_size)
 /**
  * \brief acquire current date as UTC string
  * \param date returned date
- * \param date_size size of date string, including \0
+ * \param date_size size of date string, including 0
  * \return 0 on success otherwise an error code
  */
 int util_utc_date(char **date, u_int32_t *date_size)
@@ -393,6 +391,7 @@ int util_log_init(glc_t *glc)
  * Errors are always written to stderr also.
  * \param glc glc
  * \param level message level
+ * \param module module
  * \param format passed to fprintf()
  * \param ... passed to fprintf()
  */
@@ -409,8 +408,7 @@ void util_log(glc_t *glc, int level, const char *module, const char *format, ...
 	    (!(glc->flags & GLC_NOERR))) {
 		va_start(ap, format);
 
-		util_write_time(glc, stderr);
-		fprintf(stderr, " (glc:%s) ", module);
+		util_write_log_prefix(glc, util->log_file, level, module);
 		vfprintf(stderr, format, ap);
 		fputc('\n', stderr);
 
@@ -425,9 +423,7 @@ void util_log(glc_t *glc, int level, const char *module, const char *format, ...
 	/* this is highly threaded application and we want
 	   non-corrupted logs */
 	pthread_mutex_lock(&util->log_mutex);
-
-	util_write_time(glc, util->log_file);
-	fprintf(util->log_file, " (%s) ", module);
+	util_write_log_prefix(glc, util->log_file, level, module);
 	vfprintf(util->log_file, format, ap);
 	fputc('\n', util->log_file);
 
@@ -466,12 +462,12 @@ void util_log_info(glc_t *glc)
 	if ((!(glc->flags & GLC_LOG)) | (glc->log_level < GLC_INFORMATION))
 		return;
 
-	util_write_time(glc, util->log_file);
-	fprintf(util->log_file, " (util) system information\n");
+	util_write_log_prefix(glc, util->log_file, GLC_INFORMATION, "util");
+	fprintf(util->log_file, "system information");
 	fprintf(util->log_file, "  processors  = %ld\n", util_cpus());
 
-	util_write_time(glc, util->log_file);
-	fprintf(util->log_file, " (util) stream information\n");
+	util_write_log_prefix(glc, util->log_file, GLC_INFORMATION, "util");
+	fprintf(util->log_file, "stream information\n");
 	fprintf(util->log_file, "  signature   = 0x%08x\n", glc->info->signature);
 	fprintf(util->log_file, "  version     = 0x%02x\n", glc->info->version);
 	fprintf(util->log_file, "  flags       = %d\n", glc->info->flags);
@@ -481,9 +477,42 @@ void util_log_info(glc_t *glc)
 	fprintf(util->log_file, "  date        = %s\n", glc->info_date);
 }
 
-void util_write_time(glc_t *glc, FILE *stream)
+/**
+ * \brief write standard log prefix to stream
+ * \param glc glc
+ * \param stream stream
+ * \param level message level
+ * \param module module
+ */
+void util_write_log_prefix(glc_t *glc, FILE *stream, int level, const char *module)
 {
-	fprintf(stream, "[%7.2fs]", (double) util_real_time(glc) / 1000000.0);
+	const char *level_str = NULL;
+
+	/* human-readable msg level */
+	switch (level) {
+		case GLC_ERROR:
+			level_str = "error";
+			break;
+		case GLC_WARNING:
+			level_str = "warning";
+			break;
+		case GLC_PERFORMANCE:
+			level_str = "perf";
+			break;
+		case GLC_INFORMATION:
+			level_str = "info";
+			break;
+		case GLC_DEBUG:
+			level_str = "dbg";
+			break;
+		default:
+			level_str = "unknown";
+			break;
+	}
+
+	fprintf(stream, "[%7.2fs %10s %5s ] ",
+		(double) util_real_time(glc) / 1000000.0, module, level_str);
 }
 
+/**  \} */
 /**  \} */
