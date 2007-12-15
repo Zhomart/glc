@@ -48,40 +48,6 @@ void util_write_log_prefix(glc_t *glc, FILE *stream, int level, const char *modu
 glc_utime_t util_real_time(glc_t *glc);
 
 /**
- * \brief create glc_t
- *
- * Allocates new glc_t and initializes it.
- * \param glc returned glc
- * \return 0 on success otherwise an error code
- */
-int glc_create(glc_t **glc)
-{
-	int i;
-	*glc = (glc_t *) malloc(sizeof(glc_t));
-	for (i = 0; i < GLC_SIGNALS; i++)
-		sem_init(&(*glc)->signal[i], 0, 0);
-	return 0;
-}
-
-/**
- * \brief destroy glc_t
- *
- * Destroy signals and free glc_t.
- * \param glc glc_t to destroy
- * \return 0 on success otherwise an error code
- */
-int glc_destroy(glc_t *glc)
-{
-	int i;
-	if (!glc)
-		return EINVAL;
-	for (i = 0; i < GLC_SIGNALS; i++)
-		sem_destroy(&glc->signal[i]);
-	free(glc);
-	return 0;
-}
-
-/**
  * \brief initialize utilities
  *
  * Initializes utilities and sets global startup time.
@@ -463,7 +429,7 @@ void util_log_info(glc_t *glc)
 		return;
 
 	util_write_log_prefix(glc, util->log_file, GLC_INFORMATION, "util");
-	fprintf(util->log_file, "system information");
+	fprintf(util->log_file, "system information\n");
 	fprintf(util->log_file, "  processors  = %ld\n", util_cpus());
 
 	util_write_log_prefix(glc, util->log_file, GLC_INFORMATION, "util");

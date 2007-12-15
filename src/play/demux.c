@@ -34,7 +34,7 @@ struct demux_ctx_s {
 	ps_packet_t packet;
 
 	int running;
-	sem_t finished;
+	void *gl_play;
 
 	struct demux_ctx_s *next;
 };
@@ -45,7 +45,7 @@ struct demux_stream_s {
 	ps_packet_t packet;
 
 	int running;
-	sem_t finished;
+	void *audio_play;
 
 	struct demux_stream_s *next;
 };
@@ -53,6 +53,7 @@ struct demux_stream_s {
 struct demux_private_s {
 	glc_t *glc;
 	ps_buffer_t *from;
+	sem_t finished;
 
 	pthread_t thread;
 
@@ -82,31 +83,53 @@ int demux_audio_stream_send(struct demux_private_s *demux, struct demux_stream_s
 			 glc_message_header_t *header, char *data, size_t size);
 int demux_audio_stream_clean(struct demux_private_s *demux, struct demux_stream_s *stream);
 
-int demux_init(glc_t *glc, ps_buffer_t *from)
+void *demux_init(glc_t *glc, ps_buffer_t *from)
 {
 	struct demux_private_s *demux = (struct demux_private_s *) malloc(sizeof(struct demux_private_s));
 	memset(demux, 0, sizeof(struct demux_private_s));
 
 	demux->glc = glc;
+	sem_init(&demux->finished, 0, 0);
 	demux->from = from;
 
 	ps_bufferattr_init(&demux->bufferattr);
 	ps_bufferattr_setsize(&demux->bufferattr, glc->uncompressed_size);
 
-	return pthread_create(&demux->thread, NULL, demux_thread, demux);
+	if (pthread_create(&demux->thread, NULL, demux_thread, demux))
+		return NULL;
+
+	return demux;
+}
+
+int demux_wait(void *demuxpriv)
+{
+	struct demux_private_s *demux = demuxpriv;
+
+	sem_wait(&demux->finished);
+	sem_destroy(&demux->finished);
+	free(demux);
+
+	return 0;
 }
 
 int demux_close(struct demux_private_s *demux)
 {
 	ps_bufferattr_destroy(&demux->bufferattr);
+	int ret = 0;
 
-	if (demux->ctx != NULL)
-		demux_video_close(demux);
-	if (demux->stream != NULL)
-		demux_audio_close(demux);
+	if (demux->ctx != NULL) {
+		if ((ret = demux_video_close(demux)))
+			util_log(demux->glc, GLC_ERROR, "demux", "can't close video streams: %s (%d)",
+				 strerror(ret), ret);
+	}
 
-	sem_post(&demux->glc->signal[GLC_SIGNAL_DEMUX_FINISHED]);
-	free(demux);
+	if (demux->stream != NULL) {
+		if ((ret = demux_audio_close(demux)))
+			util_log(demux->glc, GLC_ERROR, "demux", "can't close audio streams: %s (%d)",
+				 strerror(ret), ret);
+	}
+
+	sem_post(&demux->finished);
 	return 0;
 }
 
@@ -223,6 +246,7 @@ err:
 		return ret;
 
 	/* since it is EINTR, _cancel() is already done */
+	util_log(demux->glc, GLC_DEBUG, "demux", "video stream %d has quit", ctx->ctx_i);
 	demux_video_ctx_clean(demux, ctx);
 	return 0;
 }
@@ -267,9 +291,8 @@ int demux_video_get_ctx(struct demux_private_s *demux, glc_ctx_i ctx_i, struct d
 		if ((ret = ps_packet_init(&(*ctx)->packet, &(*ctx)->buffer)))
 			return ret;
 
-		sem_init(&(*ctx)->finished, 0, 0);
-		if ((ret = gl_play_init(demux->glc, &(*ctx)->buffer, (*ctx)->ctx_i, &(*ctx)->finished)))
-			return ret;
+		if (((*ctx)->gl_play = gl_play_init(demux->glc, &(*ctx)->buffer, (*ctx)->ctx_i)) == NULL)
+			return EAGAIN;
 		(*ctx)->running = 1;
 
 		(*ctx)->next = demux->ctx;
@@ -283,12 +306,11 @@ int demux_video_ctx_clean(struct demux_private_s *demux, struct demux_ctx_s *ctx
 	int ret;
 	ctx->running = 0;
 
-	if ((ret = sem_wait(&ctx->finished)))
+	if ((ret = gl_play_wait(ctx->gl_play)))
 		return ret;
 
 	ps_packet_destroy(&ctx->packet);
 	ps_buffer_destroy(&ctx->buffer);
-	sem_destroy(&ctx->finished);
 
 	return 0;
 }
@@ -369,10 +391,9 @@ int demux_audio_get_stream(struct demux_private_s *demux, glc_audio_i audio_i,
 		if ((ret = ps_packet_init(&(*stream)->packet, &(*stream)->buffer)))
 			return ret;
 
-		sem_init(&(*stream)->finished, 0, 0);
-		if ((ret = audio_play_init(demux->glc, &(*stream)->buffer,
-					   (*stream)->audio_i, &(*stream)->finished)))
-			return ret;
+		if (((*stream)->audio_play = audio_play_init(demux->glc, &(*stream)->buffer,
+							     (*stream)->audio_i)) == NULL)
+			return EAGAIN;
 		(*stream)->running = 1;
 
 		(*stream)->next = demux->stream;
@@ -397,6 +418,7 @@ err:
 	if (ret != EINTR)
 		return ret;
 
+	util_log(demux->glc, GLC_DEBUG, "demux", "audio stream %d has quit", stream->audio_i);
 	demux_audio_stream_clean(demux, stream);
 	return 0;
 }
@@ -406,12 +428,11 @@ int demux_audio_stream_clean(struct demux_private_s *demux, struct demux_stream_
 	int ret;
 	stream->running = 0;
 
-	if ((ret = sem_wait(&stream->finished)))
+	if ((ret = audio_play_wait(stream->audio_play)))
 		return ret;
 
 	ps_packet_destroy(&stream->packet);
 	ps_buffer_destroy(&stream->buffer);
-	sem_destroy(&stream->finished);
 
 	return 0;
 }

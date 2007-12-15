@@ -6,7 +6,7 @@
  */
 
 /* glc.h -- ALSA & OpenGL video capture tool
-  version 0.4.1, December 6th, 2007
+  version 0.4.2, December 15th, 2007
 
   Copyright (C) 2007 Pyry Haulos <pyry.haulos@gmail.com>
 
@@ -53,45 +53,10 @@
 /** always hide this object */
 #define __PRIVATE __attribute__ ((visibility ("hidden")))
 
-/* we need LARGE files */
-#define _FILE_OFFSET_BITS 64
-
 /** stream version */
 #define GLC_STREAM_VERSION              0x2
 /** file signature = "GLC" */
 #define GLC_SIGNATURE            0x00434c47
-
-/** \todo better signal framework */
-/** gl capture has finished */
-#define GLC_SIGNAL_GL_CAPTURE_FINISHED    0
-/** pack/unpack has finished */
-#define GLC_SIGNAL_PACK_FINISHED          1
-/** file has finished */
-#define GLC_SIGNAL_FILE_FINISHED          2
-/** img has finished */
-#define GLC_SIGNAL_IMG_FINISHED           3
-/** scale has finished */
-#define GLC_SIGNAL_SCALE_FINISHED         4
-/** info has finished */
-#define GLC_SIGNAL_INFO_FINISHED          5
-/** audio has finished */
-#define GLC_SIGNAL_AUDIO_FINISHED         6
-/** wav has finished */
-#define GLC_SIGNAL_WAV_FINISHED           7
-/** demux has finished */
-#define GLC_SIGNAL_DEMUX_FINISHED         8
-/** ycbcr has finished */
-#define GLC_SIGNAL_YCBCR_FINISHED         9
-/** yuv4mpeg has finished */
-#define GLC_SIGNAL_YUV4MPEG_FINISHED     10
-/** rgb has finished */
-#define GLC_SIGNAL_RGB_FINISHED          11
-/** gl playback has finished */
-#define GLC_SIGNAL_GL_PLAY_FINISHED      12
-/** color correction filter has finished */
-#define GLC_SIGNAL_COLOR_FINISHED        13
-/** number of signals */
-#define GLC_SIGNALS                      14
 
 /** unsigned time in microseconds */
 typedef u_int64_t glc_utime_t;
@@ -185,8 +150,6 @@ typedef struct {
 typedef struct {
 	/** active flags */
 	glc_flags_t flags;
-	/** signals */
-	sem_t signal[GLC_SIGNALS];
 	/** stream file */
 	char *stream_file;
 	/** log file */
