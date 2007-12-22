@@ -79,7 +79,9 @@ void init_glc()
 	if (mpriv.glc.flags & GLC_LOG) {
 		if (util_log_init(&mpriv.glc))
 			mpriv.glc.flags &= ~GLC_LOG;
+		util_log_version(&mpriv.glc);
 	}
+
 
 	if ((ret = init_buffers()))
 		goto err;
@@ -394,6 +396,10 @@ void *wrapped_func(const char *symbol)
 		return &__alsa_snd_pcm_writei;
 	else if (!strcmp(symbol, "snd_pcm_writen"))
 		return &__alsa_snd_pcm_writen;
+	else if (!strcmp(symbol, "snd_pcm_mmap_writei"))
+		return &__alsa_snd_pcm_mmap_writei;
+	else if (!strcmp(symbol, "snd_pcm_mmap_writen"))
+		return &__alsa_snd_pcm_mmap_writen;
 	else if (!strcmp(symbol, "snd_pcm_mmap_begin"))
 		return &__alsa_snd_pcm_mmap_begin;
 	else if (!strcmp(symbol, "snd_pcm_mmap_commit"))
