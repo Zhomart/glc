@@ -26,11 +26,27 @@ die () {
 }
 
 download () {
-	wget -c -q "$1" || die "Can't fetch $1"
+	[ -f "$1.tar.gz" ] && rm -f "$1.tar.gz"
+	wget -q "http://nullkey.ath.cx/$1/$1.tar.gz" || die "Can't fetch $1"
 }
 
 unpack () {
-	tar -xzf "$1" || die "Can't unpack $1"
+	[ -d "$1" ] && rm -rdf "$1"
+	tar -xzf "$1.tar.gz" || die "Can't unpack $1.tar.gz"
+}
+
+gitfetch () {
+	GIT_CLONE=`which git-clone 2> /dev/null`
+	GIT_PULL=`which git-pull 2> /dev/null`
+
+	if [ -d "$1" ]; then
+		cd "$1"
+		$GIT_PULL origin || die "Can't update $1"
+		cd ..
+	else
+		$GIT_CLONE "git://nullkey.ath.cx/~pyry/$1" \
+			|| die "Can't clone $1"
+	fi
 }
 
 info "Welcome to glc install script!"
@@ -99,28 +115,24 @@ read USE_GIT
 if [ "${USE_GIT}" == "y" ]; then
 	GIT_CLONE=`which git-clone 2> /dev/null`
 	if [ -x "${GIT_CLONE}" ]; then
-		$GIT_CLONE "git://nullkey.ath.cx/~pyry/glc" \
-			|| die "Can't clone glc"
-		$GIT_CLONE "git://nullkey.ath.cx/~pyry/glc-support" \
-			|| die "Can't clone glc-support"
-		$GIT_CLONE "git://nullkey.ath.cx/~pyry/elfhacks" \
-			|| die "Can't clone elfhacks"
-		$GIT_CLONE "git://nullkey.ath.cx/~pyry/packetstream" \
-			|| die "Can't clone packetstream"
-		cd glc && ln -s ../glc-support ./support && cd ..
+		gitfetch glc
+		gitfetch glc-support
+		gitfetch elfhacks
+		gitfetch packetstream
+		cd glc && ln -sf ../glc-support ./support && cd ..
 	else
 		die "git-clone not found (Ubuntu users: apt-get install git-core)"
 	fi
 else
 	info "Fetching sources..."
-	download "http://nullkey.ath.cx/elfhacks/elfhacks.tar.gz"
-	download "http://nullkey.ath.cx/packetstream/packetstream.tar.gz"
-	download "http://nullkey.ath.cx/glc/glc.tar.gz"
+	download elfhacks
+	download packetstream
+	download glc
 	
 	info "Unpacking sources..."
-	unpack "elfhacks.tar.gz"
-	unpack "packetstream.tar.gz"
-	unpack "glc.tar.gz"
+	unpack elfhacks
+	unpack packetstream
+	unpack glc
 fi
 
 info "Building elfhacks..."
