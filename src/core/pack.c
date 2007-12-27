@@ -49,7 +49,6 @@
 struct pack_private_s {
 	glc_t *glc;
 	glc_thread_t thread;
-	sem_t finished;
 	size_t compress_min;
 };
 
@@ -70,7 +69,6 @@ void *pack_init(glc_t *glc, ps_buffer_t *from, ps_buffer_t *to)
 	memset(pack, 0, sizeof(struct pack_private_s));
 
 	pack->glc = glc;
-	sem_init(&pack->finished, 0, 0);
 	pack->compress_min = 1024;
 
 	pack->thread.flags = GLC_THREAD_WRITE | GLC_THREAD_READ;
@@ -113,8 +111,7 @@ int pack_wait(void *packpriv)
 {
 	struct pack_private_s *pack = packpriv;
 
-	sem_wait(&pack->finished);
-	sem_destroy(&pack->finished);
+	glc_thread_wait(&pack->thread);
 	free(pack);
 
 	return 0;
@@ -126,8 +123,6 @@ void pack_finish_callback(void *ptr, int err)
 
 	if (err)
 		util_log(pack->glc, GLC_ERROR, "pack", "%s (%d)", strerror(err), err);
-
-	sem_post(&pack->finished);
 }
 
 int pack_thread_create_callback(void *ptr, void **threadptr)
@@ -248,7 +243,6 @@ void *unpack_init(glc_t *glc, ps_buffer_t *from, ps_buffer_t *to)
 	memset(pack, 0, sizeof(struct pack_private_s));
 
 	pack->glc = glc;
-	sem_init(&pack->finished, 0, 0);
 
 	pack->thread.flags = GLC_THREAD_WRITE | GLC_THREAD_READ;
 	pack->thread.ptr = pack;
@@ -271,8 +265,7 @@ int unpack_wait(void *unpackpriv)
 {
 	struct pack_private_s *pack = unpackpriv;
 
-	sem_wait(&pack->finished);
-	sem_destroy(&pack->finished);
+	glc_thread_wait(&pack->thread);
 	free(pack);
 
 	return 0;
@@ -284,8 +277,6 @@ void unpack_finish_callback(void *ptr, int err)
 
 	if (err)
 		util_log(pack->glc, GLC_ERROR, "unpack", "%s (%d)", strerror(err), err);
-
-	sem_post(&pack->finished);
 }
 
 int unpack_read_callback(glc_thread_state_t *state)
@@ -295,7 +286,8 @@ int unpack_read_callback(glc_thread_state_t *state)
 		state->write_size = ((glc_lzo_header_t *) state->read_data)->size;
 		return 0;
 #else
-		util_log(pack->glc, GLC_ERROR, "unpack", "LZO not supported");
+		util_log(((struct pack_private_s *) state->ptr)->glc,
+			 GLC_ERROR, "unpack", "LZO not supported");
 		return ENOTSUP;
 #endif
 	} else if (state->header.type == GLC_MESSAGE_QUICKLZ) {
@@ -303,7 +295,8 @@ int unpack_read_callback(glc_thread_state_t *state)
 		state->write_size = ((glc_quicklz_header_t *) state->read_data)->size;
 		return 0;
 #else
-		util_log(pack->glc, GLC_ERROR, "unpack", "unpack: QuickLZ not supported");
+		util_log(((struct pack_private_s *) state->ptr)->glc,
+			 GLC_ERROR, "unpack", "unpack: QuickLZ not supported");
 		return ENOTSUP;
 #endif
 	}

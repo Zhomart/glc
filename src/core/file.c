@@ -21,6 +21,12 @@
 #include <packetstream.h>
 #include <errno.h>
 
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/file.h>
+#include <fcntl.h>
+
 #include "../common/glc.h"
 #include "../common/thread.h"
 #include "../common/util.h"
@@ -29,8 +35,7 @@
 struct file_private_s {
 	glc_t *glc;
 	glc_thread_t thread;
-	sem_t finished;
-	FILE *to;
+	int fd;
 };
 
 void file_finish_callback(void *ptr, int err);
@@ -44,15 +49,22 @@ void *file_init(glc_t *glc, ps_buffer_t *from)
 	memset(file, 0, sizeof(struct file_private_s));
 
 	file->glc = glc;
-	sem_init(&file->finished, 0, 0);
 
 	util_log(file->glc, GLC_INFORMATION, "file",
 		 "opening %s for stream", file->glc->stream_file);
 
-	file->to = fopen(file->glc->stream_file, "w");
+	file->fd = open(file->glc->stream_file,
+			O_CREAT | O_WRONLY | O_TRUNC | O_SYNC, 0644);
 
-	if (!file->to) {
-		util_log(file->glc, GLC_ERROR, "file", "can't open %s", file->glc->stream_file);
+	if (file->fd == -1) {
+		util_log(file->glc, GLC_ERROR, "file", "can't open %s: %s (%d)",
+			 file->glc->stream_file, strerror(errno), errno);
+		goto cancel;
+	}
+
+	if (flock(file->fd, LOCK_EX | LOCK_NB) == -1) {
+		util_log(file->glc, GLC_ERROR, "file", "can't lock %s: %s (%d)",
+			 file->glc->stream_file, strerror(errno), errno);
 		goto cancel;
 	}
 
@@ -61,9 +73,9 @@ void *file_init(glc_t *glc, ps_buffer_t *from)
 		goto cancel;
 	}
 
-	fwrite(file->glc->info, 1, GLC_STREAM_INFO_SIZE, file->to);
-	fwrite(file->glc->info_name, 1, file->glc->info->name_size, file->to);
-	fwrite(file->glc->info_date, 1, file->glc->info->date_size, file->to);
+	write(file->fd, file->glc->info, GLC_STREAM_INFO_SIZE);
+	write(file->fd, file->glc->info_name, file->glc->info->name_size);
+	write(file->fd, file->glc->info_date, file->glc->info->date_size);
 
 	file->thread.flags = GLC_THREAD_READ;
 	file->thread.ptr = file;
@@ -86,8 +98,7 @@ int file_wait(void *filepriv)
 {
 	struct file_private_s *file = filepriv;
 
-	sem_wait(&file->finished);
-	sem_destroy(&file->finished);
+	glc_thread_wait(&file->thread);
 	free(file);
 
 	return 0;
@@ -100,11 +111,14 @@ void file_finish_callback(void *ptr, int err)
 	if (err)
 		util_log(file->glc, GLC_ERROR, "file", "%s (%d)", strerror(err), err);
 
-	if (fclose(file->to))
+	/* try to remove lock */
+	if (flock(file->fd, LOCK_UN) == -1)
+		util_log(file->glc, GLC_WARNING, "file", "can't unlock file: %s (%d)",
+			 strerror(errno), errno);
+
+	if (close(file->fd))
 		util_log(file->glc, GLC_ERROR, "file",
 			 "can't close file: %s (%d)", strerror(errno), errno);
-
-	sem_post(&file->finished);
 }
 
 int file_read_callback(glc_thread_state_t *state)
@@ -116,21 +130,21 @@ int file_read_callback(glc_thread_state_t *state)
 	if (state->header.type == GLC_MESSAGE_CONTAINER) {
 		container = (glc_container_message_t *) state->read_data;
 
-		if (fwrite(&container->header, 1, GLC_MESSAGE_HEADER_SIZE, file->to)
+		if (write(file->fd, &container->header, GLC_MESSAGE_HEADER_SIZE)
 		    != GLC_MESSAGE_HEADER_SIZE)
 			return ENOSTR;
-		if (fwrite(&container->size, 1, GLC_SIZE_SIZE, file->to) != GLC_SIZE_SIZE)
+		if (write(file->fd, &container->size, GLC_SIZE_SIZE) != GLC_SIZE_SIZE)
 			return ENOSTR;
-		if (fwrite(&state->read_data[GLC_CONTAINER_MESSAGE_SIZE], 1, container->size, file->to)
+		if (write(file->fd, &state->read_data[GLC_CONTAINER_MESSAGE_SIZE], container->size)
 		    != container->size)
 			return ENOSTR;
 	} else {
-		if (fwrite(&state->header, 1, GLC_MESSAGE_HEADER_SIZE, file->to) != GLC_MESSAGE_HEADER_SIZE)
+		if (write(file->fd, &state->header, GLC_MESSAGE_HEADER_SIZE) != GLC_MESSAGE_HEADER_SIZE)
 			return ENOSTR;
 		glc_size = state->read_size;
-		if (fwrite(&glc_size, 1, GLC_SIZE_SIZE, file->to) != GLC_SIZE_SIZE)
+		if (write(file->fd, &glc_size, GLC_SIZE_SIZE) != GLC_SIZE_SIZE)
 			return ENOSTR;
-		if (fwrite(state->read_data, 1, state->read_size, file->to) != state->read_size)
+		if (write(file->fd, state->read_data, state->read_size) != state->read_size)
 			return ENOSTR;
 	}
 
@@ -139,17 +153,16 @@ int file_read_callback(glc_thread_state_t *state)
 
 int file_read(glc_t *glc, ps_buffer_t *to)
 {
-	int ret = 0;
+	int fd, ret = 0;
 	glc_stream_info_t *info;
 	glc_message_header_t header;
-	size_t packet_size;
-	FILE *from;
+	size_t packet_size = 0;
 	ps_packet_t packet;
 	char *dma;
 	glc_size_t glc_ps;
 
-	from = fopen(glc->stream_file, "r");
-	if (from == NULL) {
+	fd = open(glc->stream_file, O_SYNC);
+	if (!fd) {
 		util_log(glc, GLC_ERROR, "file",
 			 "can't open %s: %s (%d)", glc->stream_file, strerror(errno), errno);
 		return -1;
@@ -157,7 +170,7 @@ int file_read(glc_t *glc, ps_buffer_t *to)
 
 	info = (glc_stream_info_t *) malloc(sizeof(glc_stream_info_t));
 	memset(info, 0, sizeof(glc_stream_info_t));
-	fread(info, 1, GLC_STREAM_INFO_SIZE, from);
+	read(fd, info, GLC_STREAM_INFO_SIZE);
 
 	if (info->signature != GLC_SIGNATURE) {
 		util_log(glc, GLC_ERROR, "file", "signature does not match");
@@ -171,18 +184,18 @@ int file_read(glc_t *glc, ps_buffer_t *to)
 	}
 
 	if (info->name_size > 0)
-		fseek(from, info->name_size, SEEK_CUR);
+		lseek(fd, info->name_size, SEEK_CUR);
 	if (info->date_size > 0)
-		fseek(from, info->date_size, SEEK_CUR);
+		lseek(fd, info->date_size, SEEK_CUR);
 
 	free(info);
 
 	ps_packet_init(&packet, to);
 
 	do {
-		if (fread(&header, 1, GLC_MESSAGE_HEADER_SIZE, from) != GLC_MESSAGE_HEADER_SIZE)
+		if (read(fd, &header, GLC_MESSAGE_HEADER_SIZE) != GLC_MESSAGE_HEADER_SIZE)
 			goto send_eof;
-		if (fread(&glc_ps, 1, GLC_SIZE_SIZE, from) != GLC_SIZE_SIZE)
+		if (read(fd, &glc_ps, GLC_SIZE_SIZE) != GLC_SIZE_SIZE)
 			goto send_eof;
 
 		packet_size = glc_ps;
@@ -194,7 +207,7 @@ int file_read(glc_t *glc, ps_buffer_t *to)
 		if ((ret = ps_packet_dma(&packet, (void *) &dma, packet_size, PS_ACCEPT_FAKE_DMA)))
 			goto err;
 
-		if (fread(dma, 1, packet_size, from) != packet_size)
+		if (read(fd, dma, packet_size) != packet_size)
 			goto read_fail;
 
 		if ((ret = ps_packet_close(&packet)))
@@ -203,7 +216,7 @@ int file_read(glc_t *glc, ps_buffer_t *to)
 
 finish:
 	ps_packet_destroy(&packet);
-	fclose(from);
+	close(fd);
 
 	return 0;
 
@@ -223,11 +236,11 @@ err:
 		goto finish; /* just cancel */
 
 	util_log(glc, GLC_ERROR, "file", "%s (%d)", strerror(ret), ret);
-	fclose(from);
+	util_log(glc, GLC_DEBUG, "file", "packet size is %zd", packet_size);
+	close(fd);
 	ps_buffer_cancel(to);
 	return ret;
 }
-
 
 /**  \} */
 /**  \} */

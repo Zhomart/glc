@@ -35,7 +35,6 @@
 struct gl_play_private_s {
 	glc_t *glc;
 	glc_thread_t play_thread;
-	sem_t finished;
 
 	glc_ctx_i ctx_i;
 	GLenum format;
@@ -44,7 +43,7 @@ struct gl_play_private_s {
 	glc_utime_t last, fps;
 
 	Display *dpy;
-	GLXDrawable drawable;
+	Window win;
 	GLXContext ctx;
 	char name[100];
 	int created;
@@ -78,7 +77,6 @@ void *gl_play_init(glc_t *glc, ps_buffer_t *from, glc_ctx_i ctx)
 	memset(gl_play, 0, sizeof(struct gl_play_private_s));
 
 	gl_play->glc = glc;
-	sem_init(&gl_play->finished, 0, 0);
 	gl_play->ctx_i = ctx;
 
 	gl_play->play_thread.flags = GLC_THREAD_READ;
@@ -105,8 +103,7 @@ int gl_play_wait(void *priv)
 {
 	struct gl_play_private_s *gl_play = priv;
 
-	sem_wait(&gl_play->finished);
-	sem_destroy(&gl_play->finished);
+	glc_thread_wait(&gl_play->play_thread);
 	free(gl_play);
 
 	return 0;
@@ -117,19 +114,18 @@ void gl_play_finish_callback(void *ptr, int err)
 	struct gl_play_private_s *gl_play = (struct gl_play_private_s *) ptr;
 
 	if (err)
-		fprintf(stderr, "gl_play failed: %s (%d)\n", strerror(err), err);
+		util_log(gl_play->glc, GLC_ERROR, "gl_play",
+			 "%s (%d)", strerror(err), err);
 
 	if (gl_play->created) {
 		if (gl_play->texture)
 			glDeleteTextures(1, &gl_play->texture);
 
 		glXDestroyContext(gl_play->dpy, gl_play->ctx);
-		XDestroyWindow(gl_play->dpy, gl_play->drawable);
+		XDestroyWindow(gl_play->dpy, gl_play->win);
 	}
 
 	XCloseDisplay(gl_play->dpy);
-
-	sem_post(&gl_play->finished);
 }
 
 int gl_play_draw_picture(struct gl_play_private_s *gl_play, char *from)
@@ -168,13 +164,13 @@ int gl_play_create_ctx(struct gl_play_private_s *gl_play)
 	winattr.background_pixel = 0;
 	winattr.border_pixel = 0;
 	winattr.colormap = XCreateColormap(gl_play->dpy, RootWindow(gl_play->dpy, DefaultScreen(gl_play->dpy)),
-	                                   visinfo->visual, AllocNone);
+					   visinfo->visual, AllocNone);
 	winattr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask | KeyReleaseMask;
 	winattr.override_redirect = 0;
-	gl_play->drawable = XCreateWindow(gl_play->dpy, RootWindow(gl_play->dpy, DefaultScreen(gl_play->dpy)),
-	                              0, 0, gl_play->w, gl_play->h, 0, visinfo->depth, InputOutput,
-	                              visinfo->visual, CWBackPixel | CWBorderPixel |
-	                              CWColormap | CWEventMask | CWOverrideRedirect, &winattr);
+	gl_play->win = XCreateWindow(gl_play->dpy, RootWindow(gl_play->dpy, DefaultScreen(gl_play->dpy)),
+				     0, 0, gl_play->w, gl_play->h, 0, visinfo->depth, InputOutput,
+				     visinfo->visual, CWBackPixel | CWBorderPixel |
+				     CWColormap | CWEventMask | CWOverrideRedirect, &winattr);
 
 	gl_play->ctx = glXCreateContext(gl_play->dpy, visinfo, NULL, True);
 	if (gl_play->ctx == NULL)
@@ -191,7 +187,7 @@ int gl_play_create_ctx(struct gl_play_private_s *gl_play)
 	gl_play->net_wm_state_fullscreen_atom = XInternAtom(gl_play->dpy,
 							    "_NET_WM_STATE_FULLSCREEN", False);
 
-	XSetWMProtocols(gl_play->dpy, gl_play->drawable, &gl_play->wm_delete_window_atom, 1);
+	XSetWMProtocols(gl_play->dpy, gl_play->win, &gl_play->wm_delete_window_atom, 1);
 
 	return gl_play_update_ctx(gl_play);
 }
@@ -205,7 +201,7 @@ int gl_play_update_ctx(struct gl_play_private_s *gl_play)
 
 	snprintf(gl_play->name, sizeof(gl_play->name) - 1, "glc-play (ctx %d)", gl_play->ctx_i);
 
-	XUnmapWindow(gl_play->dpy, gl_play->drawable);
+	XUnmapWindow(gl_play->dpy, gl_play->win);
 
 	sizehints.x = 0;
 	sizehints.y = 0;
@@ -216,14 +212,14 @@ int gl_play_update_ctx(struct gl_play_private_s *gl_play)
 	sizehints.max_aspect.x = gl_play->w;
 	sizehints.max_aspect.y = gl_play->h;
 	sizehints.flags = USSize | USPosition | PAspect;
-	XSetNormalHints(gl_play->dpy, gl_play->drawable, &sizehints);
-	XSetStandardProperties(gl_play->dpy, gl_play->drawable, gl_play->name, gl_play->name, None,
-	                       (char **)NULL, 0, &sizehints);
-	XResizeWindow(gl_play->dpy, gl_play->drawable, gl_play->w, gl_play->h);
+	XSetNormalHints(gl_play->dpy, gl_play->win, &sizehints);
+	XSetStandardProperties(gl_play->dpy, gl_play->win, gl_play->name, gl_play->name, None,
+			       (char **)NULL, 0, &sizehints);
+	XResizeWindow(gl_play->dpy, gl_play->win, gl_play->w, gl_play->h);
 
-	XMapWindow(gl_play->dpy, gl_play->drawable);
+	XMapWindow(gl_play->dpy, gl_play->win);
 
-	glXMakeCurrent(gl_play->dpy, gl_play->drawable, gl_play->ctx);
+	glXMakeCurrent(gl_play->dpy, gl_play->win, gl_play->ctx);
 
 	return gl_play_update_viewport(gl_play, 0, 0, gl_play->w, gl_play->h);
 }
@@ -234,7 +230,7 @@ int gl_play_update_viewport(struct gl_play_private_s *gl_play, int x, int y,
 	/* make sure old viewport is clear */
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
-	glXSwapBuffers(gl_play->dpy, gl_play->drawable);
+	glXSwapBuffers(gl_play->dpy, gl_play->win);
 
 	glViewport((GLint) x, (GLint) y, (GLsizei) w, (GLsizei) h);
 
@@ -273,7 +269,7 @@ int gl_play_toggle_fullscreen(struct gl_play_private_s *gl_play)
 	event.type = ClientMessage;
 	event.message_type = gl_play->net_wm_state_atom;
 	event.display = gl_play->dpy;
-	event.window = gl_play->drawable;
+	event.window = gl_play->win;
 	event.format = 32;
 	event.data.l[0] = gl_play->fullscreen;
 	event.data.l[1] = gl_play->net_wm_state_fullscreen_atom;
@@ -310,12 +306,18 @@ int gl_handle_xevents(struct gl_play_private_s *gl_play, glc_thread_state_t *sta
 				gl_play->glc->flags |= GLC_CANCEL;
 			break;
 		case DestroyNotify:
-			state->flags |= GLC_THREAD_STOP;
+			gl_play->glc->flags |= GLC_CANCEL;
 			break;
 		case ClientMessage:
 			if (event.xclient.message_type == gl_play->wm_proto_atom) {
-				if ((Atom) event.xclient.data.l[0] == gl_play->wm_delete_window_atom)
+				if ((Atom) event.xclient.data.l[0] == gl_play->wm_delete_window_atom) {
+					/*
 					state->flags |= GLC_THREAD_STOP;
+					 this would kill just this single stream, but it confuses
+					 users, so...
+					*/
+					gl_play->glc->flags |= GLC_CANCEL;
+				}
 			}
 			break;
 		case ConfigureNotify:
@@ -400,7 +402,7 @@ int gl_play_read_callback(glc_thread_state_t *state)
 			return 0;
 		}
 
-		glXSwapBuffers(gl_play->dpy, gl_play->drawable);
+		glXSwapBuffers(gl_play->dpy, gl_play->win);
 	}
 
 	return 0;
