@@ -2,13 +2,13 @@
  * \file src/common/glc.h
  * \brief glc types and structures
  * \author Pyry Haulos <pyry.haulos@gmail.com>
- * \date 2007
+ * \date 2007-2008
  */
 
 /* glc.h -- ALSA & OpenGL video capture tool
-  version 0.4.5, December 27th, 2007
+  version 0.4.6, January 26th, 2008
 
-  Copyright (C) 2007 Pyry Haulos <pyry.haulos@gmail.com>
+  Copyright (C) 2007-2008 Pyry Haulos <pyry.haulos@gmail.com>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -58,7 +58,7 @@
 /** file signature = "GLC" */
 #define GLC_SIGNATURE                0x00434c47
 /** glc version string */
-#define GLC_VERSION                     "0.4.5"
+#define GLC_VERSION                     "0.4.6"
 
 /** unsigned time in microseconds */
 typedef u_int64_t glc_utime_t;
@@ -115,6 +115,8 @@ typedef u_int32_t glc_flags_t;
 #define GLC_OVERRIDE_COLOR_CORRECTION   0x20000
 /** scale to specified size */
 #define GLC_SCALE_SIZE                  0x40000
+/** export as png instead of bmp */
+#define GLC_EXPORT_PNG                  0x80000
 
 /**
  * \brief stream info structure
@@ -148,6 +150,7 @@ typedef struct {
 
 /**
  * \brief global settings
+ * \todo separate flags into global, capture, export...
  */
 typedef struct {
 	/** active flags */
