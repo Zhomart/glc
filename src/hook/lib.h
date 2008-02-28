@@ -1,20 +1,19 @@
 /**
- * \file src/hook/lib.h
+ * \file hook/lib.h
  * \brief wrapper library
  * \author Pyry Haulos <pyry.haulos@gmail.com>
- * \date 2007
+ * \date 2007-2008
  * For conditions of distribution and use, see copyright notice in glc.h
  */
 
 /**
- * \addtogroup hook
+ * \defgroup hook wrapper library
  *  \{
  */
 
 #ifndef _LIB_H
 #define _LIB_H
 
-#include "../common/glc.h"
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/xf86vmode.h>
@@ -24,6 +23,10 @@
 #include <packetstream.h>
 #include <pthread.h>
 
+#include <glc/common/glc.h>
+
+#define LIB_CAPTURING    0x1
+
 typedef struct {
 	void *(*dlopen)(const char *filename, int flag);
 	void *(*dlsym)(void *, const char *);
@@ -32,7 +35,7 @@ typedef struct {
 	int initialized;
 	int running;
 	pthread_mutex_t init_lock;
-	void *gl;
+	glc_flags_t flags;
 } glc_lib_t;
 
 #define INIT_GLC \
@@ -57,8 +60,8 @@ __PRIVATE void *wrapped_func(const char *symbol);
 __PRIVATE int alsa_init(glc_t *glc);
 __PRIVATE int alsa_start(ps_buffer_t *buffer);
 __PRIVATE int alsa_close();
-__PRIVATE int alsa_pause();
-__PRIVATE int alsa_resume();
+__PRIVATE int alsa_capture_start();
+__PRIVATE int alsa_capture_stop();
 __PRIVATE int alsa_unhook_so(const char *soname);
 /**  \} */
 
@@ -68,6 +71,9 @@ __PRIVATE int alsa_unhook_so(const char *soname);
  */
 __PRIVATE int opengl_init(glc_t *glc);
 __PRIVATE int opengl_start(ps_buffer_t *buffer);
+__PRIVATE int opengl_capture_start();
+__PRIVATE int opengl_capture_stop();
+__PRIVATE int opengl_refresh_color_correction();
 __PRIVATE int opengl_close();
 /**  \} */
 

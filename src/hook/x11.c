@@ -1,8 +1,8 @@
 /**
- * \file src/hook/x11.c
+ * \file hook/x11.c
  * \brief libX11 wrapper
  * \author Pyry Haulos <pyry.haulos@gmail.com>
- * \date 2007
+ * \date 2007-2008
  * For conditions of distribution and use, see copyright notice in glc.h
  */
 
@@ -18,13 +18,17 @@
 #include <unistd.h>
 #include <X11/keysym.h>
 
-#include "../common/glc.h"
-#include "../common/util.h"
+#include <glc/common/glc.h>
+#include <glc/common/core.h>
+#include <glc/common/log.h>
+#include <glc/common/state.h>
+#include <glc/common/util.h>
+
 #include "lib.h"
-#include "../capture/gl_capture.h"
 
 struct x11_private_s {
 	glc_t *glc;
+	int capturing;
 
 	void *libX11_handle;
 	int (*XNextEvent)(Display *, XEvent *);
@@ -62,14 +66,15 @@ __PRIVATE int x11_parse_hotkey(const char *hotkey);
 int x11_init(glc_t *glc)
 {
 	x11.glc = glc;
+	x11.capturing = 0;
 
 	get_real_x11();
 
 	if (getenv("GLC_HOTKEY")) {
 		if (x11_parse_hotkey(getenv("GLC_HOTKEY"))) {
-			util_log(x11.glc, GLC_WARNING, "x11",
+			glc_log(x11.glc, GLC_WARNING, "x11",
 				 "invalid hotkey '%s'", getenv("GLC_HOTKEY"));
-			util_log(x11.glc, GLC_WARNING, "x11",
+			glc_log(x11.glc, GLC_WARNING, "x11",
 				 "using default <Shift>F8\n");
 			x11.key_mask = X11_KEY_SHIFT;
 			x11.capture = XK_F8;
@@ -79,7 +84,7 @@ int x11_init(glc_t *glc)
 		x11.capture = XK_F8;
 	}
 
-	x11.stop = util_time(x11.glc);
+	x11.stop = glc_state_time(x11.glc);
 
 	return 0;
 }
@@ -134,25 +139,31 @@ void x11_event(Display *dpy, XEvent *event)
 			if ((x11.key_mask & X11_KEY_SHIFT) && (!(event->xkey.state & ShiftMask)))
 				return;
 
-			if (x11.glc->flags & GLC_CAPTURE) { /* stop */
-				alsa_pause();
-				x11.glc->flags &= ~GLC_CAPTURE;
-				x11.stop = util_time(x11.glc);
-				util_log(x11.glc, GLC_INFORMATION, "x11", "stopped capturing");
+			if (lib.flags & LIB_CAPTURING) { /* stop */
+				alsa_capture_stop();
+				opengl_capture_stop();
+
+				lib.flags &= ~LIB_CAPTURING;
+				x11.stop = glc_state_time(x11.glc);
+				glc_log(x11.glc, GLC_INFORMATION, "x11", "stopped capturing");
 			} else { /* start */
 				if (!lib.running) {
 					if ((ret = start_glc())) {
-						util_log(x11.glc, GLC_ERROR, "x11",
+						glc_log(x11.glc, GLC_ERROR, "x11",
 							 "can't start capturing: %s (%d)",
 							 strerror(ret), ret);
 						return; /* don't set GLC_CAPTURE flag */
 					}
-				} else
-					alsa_resume();
+					alsa_capture_start();
+					opengl_capture_start();
+				} else {
+					alsa_capture_start();
+					opengl_capture_start();
+				}
 
-				util_timediff(x11.glc, util_time(x11.glc) - x11.stop);
-				x11.glc->flags |= GLC_CAPTURE;
-				util_log(x11.glc, GLC_INFORMATION, "x11", "started capturing");
+				glc_state_time_add_diff(x11.glc, glc_state_time(x11.glc) - x11.stop);
+				lib.flags |= LIB_CAPTURING;
+				glc_log(x11.glc, GLC_INFORMATION, "x11", "started capturing");
 
 			}
 			x11.last_event_time = event->xkey.time;
@@ -395,7 +406,7 @@ Bool __x11_XF86VidModeSetGamma(Display *display, int screen, XF86VidModeGamma *G
 		return False; /* might not be present */
 
 	Bool ret = x11.XF86VidModeSetGamma(display, screen, Gamma);
-	gl_capture_refresh_color(lib.gl);
+	opengl_refresh_color_correction();
 
 	return ret;
 }

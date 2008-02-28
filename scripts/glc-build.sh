@@ -66,6 +66,8 @@ echo "#include <stdio.h>
 	|| die "Missing OpenGL headers (Ubuntu users: apt-get install libgl1-mesa-dev)"
 [ -e "/usr/include/alsa/asoundlib.h" ] \
 	|| die "Missing ALSA headers (Ubuntu users: apt-get install libasound2-dev)"
+[ -e "/usr/include/png.h" ] \
+	|| die "Missing libpng headers (Ubuntu users: apt-get-install libpng12-dev)"
 
 if [ $BUILD64 == 1 ]; then
 	echo "#include <stdio.h>
@@ -219,8 +221,8 @@ LD_LIBRARY_PATH_ADD="${DESTDIR}/usr/lib"
 
 if [ "${DESTDIR}" != "" ]; then
 	info "You may need to add following lines to your .bashrc:"
-	echo "PATH=\"\${PATH}:${DESTDIR}/usr/bin\""
-	echo "LD_LIBRARY_PATH=\"\$LD_LIBRARY_PATH:${LD_LIBRARY_PATH_ADD}\""
+	echo "export PATH=\"\${PATH}:${DESTDIR}/usr/bin\""
+	echo "export LD_LIBRARY_PATH=\"\${LD_LIBRARY_PATH}:${LD_LIBRARY_PATH_ADD}\""
 fi
 
 RM="rm"

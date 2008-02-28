@@ -12,16 +12,21 @@ MLIBDIR = lib
 DESTDIR = 
 BUILD = build
 SRC = src
+
+COMMON = $(SRC)/glc/common
+CORE = $(SRC)/glc/core
+CAPTURE = $(SRC)/glc/capture
+PLAY = $(SRC)/glc/play
+EXPORT = $(SRC)/glc/export
+
 HOOK = $(SRC)/hook
-COMMON = $(SRC)/common
-CORE = $(SRC)/core
-CAPTURE = $(SRC)/capture
-PLAY = $(SRC)/play
-EXPORT = $(SRC)/export
 SCRIPTS = scripts
 
+# includes
+FEATURES += -I$(SRC)
+
 VERSION=0
-RELEASE=$(VERSION).4.6
+RELEASE=$(VERSION).5.0
 
 # minilzo is licenced under GPL
 # remove following lines to disable minilzo:
@@ -35,27 +40,43 @@ QUICKLZ = support/quicklz/
 QUICKLZ_OBJ = $(BUILD)/quicklz.o
 FEATURES += -D__QUICKLZ -I$(QUICKLZ)
 
-HEADERS = $(COMMON)/glc.h \
-	  $(COMMON)/util.h \
-	  $(COMMON)/thread.h \
-	  $(CORE)/pack.h \
-	  $(CORE)/file.h \
-	  $(CORE)/scale.h \
-	  $(CORE)/info.h \
-	  $(CORE)/ycbcr.h \
-	  $(CORE)/rgb.h \
-	  $(CORE)/color.h \
-	  $(CAPTURE)/gl_capture.h \
-	  $(CAPTURE)/audio_hook.h \
-	  $(CAPTURE)/audio_capture.h \
-	  $(PLAY)/gl_play.h \
-	  $(PLAY)/audio_play.h \
-	  $(PLAY)/demux.h \
-	  $(EXPORT)/img.h \
-	  $(EXPORT)/wav.h \
-	  $(EXPORT)/yuv4mpeg.h
+COMMON_HEADERS = $(COMMON)/glc.h \
+		 $(COMMON)/util.h \
+		 $(COMMON)/core.h \
+		 $(COMMON)/state.h \
+		 $(COMMON)/log.h \
+		 $(COMMON)/thread.h
+
+CORE_HEADERS = $(CORE)/pack.h \
+	       $(CORE)/file.h \
+	       $(CORE)/scale.h \
+	       $(CORE)/info.h \
+	       $(CORE)/ycbcr.h \
+	       $(CORE)/rgb.h \
+	       $(CORE)/color.h
+
+CAPTURE_HEADERS = $(CAPTURE)/gl_capture.h \
+		  $(CAPTURE)/audio_hook.h \
+		  $(CAPTURE)/audio_capture.h
+
+PLAY_HEADERS = $(PLAY)/gl_play.h \
+	       $(PLAY)/audio_play.h \
+	       $(PLAY)/demux.h
+
+EXPORT_HEADERS = $(EXPORT)/img.h \
+		 $(EXPORT)/wav.h \
+		 $(EXPORT)/yuv4mpeg.h
+
+HEADERS = $(COMMON_HEADERS) \
+	  $(CORE_HEADERS) \
+	  $(CAPTURE_HEADERS) \
+	  $(PLAY_HEADERS) \
+	  $(EXPORT_HEADERS)
 
 CORE_OBJS = $(BUILD)/util.o \
+	    $(BUILD)/core.o \
+	    $(BUILD)/log.o \
+	    $(BUILD)/state.o \
 	    $(BUILD)/thread.o \
 	    $(BUILD)/scale.o \
 	    $(BUILD)/info.o \
@@ -178,8 +199,17 @@ $(BUILD)/capture.o: $(SRC)/capture.c
 
 
 # common objects
+$(BUILD)/core.o: $(COMMON)/core.c $(HEADERS)
+	$(CC) $(SO_CFLAGS) $(FEATURES) -o $(BUILD)/core.o -c $(COMMON)/core.c
+
 $(BUILD)/util.o: $(COMMON)/util.c $(HEADERS)
 	$(CC) $(SO_CFLAGS) $(FEATURES) -o $(BUILD)/util.o -c $(COMMON)/util.c
+
+$(BUILD)/state.o: $(COMMON)/state.c $(HEADERS)
+	$(CC) $(SO_CFLAGS) $(FEATURES) -o $(BUILD)/state.o -c $(COMMON)/state.c
+
+$(BUILD)/log.o: $(COMMON)/log.c $(HEADERS)
+	$(CC) $(SO_CFLAGS) $(FEATURES) -o $(BUILD)/log.o -c $(COMMON)/log.c
 
 $(BUILD)/thread.o: $(COMMON)/thread.c $(HEADERS)
 	$(CC) $(SO_CFLAGS) $(FEATURES) -o $(BUILD)/thread.o -c $(COMMON)/thread.c
@@ -299,11 +329,28 @@ install-scripts: $(SCRIPTS)/encode.sh \
 	install -Dm 0644 $(SCRIPTS)/capture.sh $(DESTDIR)/usr/share/glc/capture.sh
 	install -Dm 0644 $(SCRIPTS)/play.sh $(DESTDIR)/usr/share/glc/play.sh
 
+install-headers: $(COMMON_HEADERS) \
+		 $(CORE_HEADERS) \
+		 $(CAPTURE_HEADERS) \
+		 $(PLAY_HEADERS) \
+		 $(EXPORT_HEADERS)
+	install -d $(DESTDIR)/usr/include/glc/common \
+		   $(DESTDIR)/usr/include/glc/core \
+		   $(DESTDIR)/usr/include/glc/capture \
+		   $(DESTDIR)/usr/include/glc/play \
+		   $(DESTDIR)/usr/include/glc/export
+	install -Dm 0644 $(COMMON_HEADERS) $(DESTDIR)/usr/include/glc/common/
+	install -Dm 0644 $(CORE_HEADERS) $(DESTDIR)/usr/include/glc/core/
+	install -Dm 0644 $(CAPTURE_HEADERS) $(DESTDIR)/usr/include/glc/capture/
+	install -Dm 0644 $(PLAY_HEADERS) $(DESTDIR)/usr/include/glc/play/
+	install -Dm 0644 $(EXPORT_HEADERS) $(DESTDIR)/usr/include/glc/export/
+
 install: install-core \
 	 install-capture \
 	 install-play \
 	 install-export \
 	 install-hook \
+	 install-headers \
 	 install-binaries
 
 install-mlib: install-core \

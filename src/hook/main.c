@@ -1,8 +1,8 @@
 /**
- * \file src/hook/main.c
+ * \file hook/main.c
  * \brief main wrapper library
  * \author Pyry Haulos <pyry.haulos@gmail.com>
- * \date 2007
+ * \date 2007-2008
  * For conditions of distribution and use, see copyright notice in glc.h
  */
 
@@ -23,23 +23,35 @@
 #include <sched.h>
 #include <pthread.h>
 
-#include "../common/glc.h"
-#include "../common/util.h"
-#include "../core/pack.h"
-#include "../core/file.h"
+#include <glc/common/glc.h>
+#include <glc/common/core.h>
+#include <glc/common/log.h>
+#include <glc/common/util.h>
+#include <glc/common/state.h>
+#include <glc/core/pack.h>
+#include <glc/core/file.h>
+
 #include "lib.h"
+
+#define MAIN_COMPRESS_NONE         0x2
+#define MAIN_COMPRESS_QUICKLZ      0x4
+#define MAIN_COMPRESS_LZO          0x8
+#define MAIN_CUSTOM_LOG           0x10
 
 struct main_private_s {
 	glc_t glc;
+	glc_flags_t flags;
 
 	ps_buffer_t *uncompressed;
 	ps_buffer_t *compressed;
 	size_t uncompressed_size, compressed_size;
 
-	void *file, *pack;
+	file_t file;
+	pack_t pack;
+
+	char *stream_file;
 
 	int sighandler;
-	int compress;
 	void (*sigint_handler)(int);
 	void (*sighup_handler)(int);
 	void (*sigterm_handler)(int);
@@ -52,8 +64,7 @@ __PRIVATE glc_lib_t lib = {NULL, /* dlopen */
 			   0, /* initialized */
 			   0, /* running */
 			   PTHREAD_MUTEX_INITIALIZER, /* init_lock */
-			   NULL, /* gl */
-			   };
+			   0, /* flags */ };
 __PRIVATE struct main_private_s mpriv;
 
 __PRIVATE int init_buffers();
@@ -66,6 +77,7 @@ void init_glc()
 {
 	struct sigaction new_sighandler, old_sighandler;
 	int ret;
+	mpriv.flags = 0;
 
 	if ((ret = pthread_mutex_lock(&lib.init_lock)))
 		goto err;
@@ -73,20 +85,16 @@ void init_glc()
 	if (lib.initialized)
 		return;
 
+	/* init glc first */
+	glc_init(&mpriv.glc);
+	/* initialize state */
+	glc_state_init(&mpriv.glc);
+
 	load_environ();
-	util_init(&mpriv.glc);
-
-	if (mpriv.glc.flags & GLC_LOG) {
-		if (util_log_init(&mpriv.glc))
-			mpriv.glc.flags &= ~GLC_LOG;
-		util_log_version(&mpriv.glc);
-	}
-
+	glc_util_log_version(&mpriv.glc);
 
 	if ((ret = init_buffers()))
 		goto err;
-
-	util_create_info(&mpriv.glc);
 
 	if ((ret = opengl_init(&mpriv.glc)))
 		goto err;
@@ -95,20 +103,22 @@ void init_glc()
 	if ((ret = x11_init(&mpriv.glc)))
 		goto err;
 
-	util_init_info(&mpriv.glc); /* init stream info */
+	glc_util_log_info(&mpriv.glc);
 
 	lib.initialized = 1; /* we've technically done */
 
-	if (mpriv.glc.flags & GLC_CAPTURE) {
+	if (lib.flags & LIB_CAPTURING) {
 		if ((ret = start_glc()))
 			goto err;
+		alsa_capture_start();
+		opengl_capture_start();
 	}
 
 	atexit(lib_close);
 
 	/** \todo hook sigaction() ? */
 	if (mpriv.sighandler) {
-		util_log(&mpriv.glc, GLC_INFORMATION, "main",
+		glc_log(&mpriv.glc, GLC_INFORMATION, "main",
 			 "setting signal handler");
 
 		new_sighandler.sa_handler = signal_handler;
@@ -128,9 +138,8 @@ void init_glc()
 	if ((ret = pthread_mutex_unlock(&lib.init_lock)))
 		goto err;
 
-	util_log_info(&mpriv.glc);
-	util_log(&mpriv.glc, GLC_INFORMATION, "main", "glc initialized");
-	util_log(&mpriv.glc, GLC_DEBUG, "main", "LD_PRELOAD=%s", getenv("LD_PRELOAD"));
+	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "glc initialized");
+	glc_log(&mpriv.glc, GLC_DEBUG, "main", "LD_PRELOAD=%s", getenv("LD_PRELOAD"));
 	return;
 err:
 	fprintf(stderr, "glc: %s (%d)\n", strerror(ret), ret);
@@ -148,7 +157,7 @@ int init_buffers()
 	if ((ret = ps_buffer_init(mpriv.uncompressed, &attr)))
 		return ret;
 
-	if (mpriv.compress) {
+	if (!(mpriv.flags & MAIN_COMPRESS_NONE)) {
 		ps_bufferattr_setsize(&attr, mpriv.compressed_size);
 		mpriv.compressed = (ps_buffer_t *) malloc(sizeof(ps_buffer_t));
 		if ((ret = ps_buffer_init(mpriv.compressed, &attr)))
@@ -161,9 +170,9 @@ int init_buffers()
 
 int start_glc()
 {
+	glc_stream_info_t *stream_info;
+	char *info_name, *info_date;
 	int ret;
-
-	util_log(&mpriv.glc, GLC_INFORMATION, "main", "starting glc");
 
 	if (lib.running)
 		return EINVAL;
@@ -171,14 +180,37 @@ int start_glc()
 	if (!lib.initialized)
 		return EAGAIN;
 
-	if (mpriv.compress) {
-		/* file needs stream info */
-		if ((mpriv.file = file_init(&mpriv.glc, mpriv.compressed)) == NULL)
-			return EAGAIN;
-		if ((mpriv.pack = pack_init(&mpriv.glc, mpriv.uncompressed, mpriv.compressed)) == NULL)
-			return EAGAIN;
-	} else if ((mpriv.file = file_init(&mpriv.glc, mpriv.uncompressed)) == NULL)
-		return EAGAIN;
+	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "starting glc");
+
+	/* initialize file & write stream info */
+	glc_util_info_create(&mpriv.glc, &stream_info, &info_name, &info_date);
+	if ((ret = file_init(&mpriv.file, &mpriv.glc)))
+		return ret;
+	if ((ret = file_open_target(mpriv.file, mpriv.stream_file)))
+		return ret;
+	if ((ret = file_write_info(mpriv.file, stream_info,
+				   info_name, info_date)))
+		return ret;
+	free(stream_info);
+	free(info_name);
+	free(info_date);
+
+	if (!(mpriv.flags & MAIN_COMPRESS_NONE)) {
+		if ((ret = file_write_process_start(mpriv.file, mpriv.compressed)))
+			return ret;
+
+		if ((ret = pack_init(&mpriv.pack, &mpriv.glc)))
+			return ret;
+
+		if (mpriv.flags & MAIN_COMPRESS_QUICKLZ)
+			pack_set_compression(mpriv.pack, PACK_QUICKLZ);
+		else if (mpriv.flags & MAIN_COMPRESS_LZO)
+			pack_set_compression(mpriv.pack, PACK_LZO);
+
+		if ((ret = pack_process_start(mpriv.pack, mpriv.uncompressed, mpriv.compressed)))
+			return ret;
+	} else if ((ret = file_write_process_start(mpriv.file, mpriv.uncompressed)))
+		return ret;
 
 	if ((ret = alsa_start(mpriv.uncompressed)))
 		return ret;
@@ -186,7 +218,7 @@ int start_glc()
 		return ret;
 
 	lib.running = 1;
-	util_log(&mpriv.glc, GLC_INFORMATION, "main", "glc running");
+	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "glc running");
 
 	return 0;
 }
@@ -223,7 +255,6 @@ void signal_handler(int signum)
 void lib_close()
 {
 	int ret;
-	mpriv.glc.flags &= ~GLC_CAPTURE; /* disable capturing */
 	/*
 	 There is a small possibility that a capture operation in another
 	 thread is still active. This should be called only in exit() or
@@ -233,7 +264,7 @@ void lib_close()
 	 cost, at least in complexity.
 	*/
 
-	util_log(&mpriv.glc, GLC_INFORMATION, "main", "closing glc");
+	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "closing glc");
 
 	if ((ret = alsa_close()))
 		goto err;
@@ -241,9 +272,13 @@ void lib_close()
 		goto err;
 
 	if (lib.running) {
-		if (mpriv.compress)
-			pack_wait(mpriv.pack);
-		file_wait(mpriv.file);
+		if (!(mpriv.flags & MAIN_COMPRESS_NONE)) {
+			pack_process_wait(mpriv.pack);
+			pack_destroy(mpriv.pack);
+		}
+		file_write_process_wait(mpriv.file);
+		file_close_target(mpriv.file);
+		file_destroy(mpriv.file);
 	}
 
 	if (mpriv.compressed) {
@@ -254,14 +289,13 @@ void lib_close()
 	ps_buffer_destroy(mpriv.uncompressed);
 	free(mpriv.uncompressed);
 
-	if (mpriv.glc.flags & GLC_LOG)
-		util_log_close(&mpriv.glc);
+	if (mpriv.flags & MAIN_CUSTOM_LOG)
+		glc_log_close(&mpriv.glc);
 
-	util_free_info(&mpriv.glc);
-	util_free(&mpriv.glc);
+	glc_state_destroy(&mpriv.glc);
+	glc_destroy(&mpriv.glc);
 
-	free(mpriv.glc.stream_file);
-	free(mpriv.glc.log_file);
+	free(mpriv.stream_file);
 	return;
 err:
 	fprintf(stderr, "(glc) cleanup and finish failed\n%s (%d)\n", strerror(ret), ret);
@@ -270,64 +304,49 @@ err:
 
 int load_environ()
 {
-	mpriv.glc.flags = 0;
+	char *log_file;
 
 	if (getenv("GLC_START")) {
 		if (atoi(getenv("GLC_START")))
-			mpriv.glc.flags |= GLC_CAPTURE;
+			lib.flags |= LIB_CAPTURING;
 	}
 
-	mpriv.glc.stream_file = malloc(1024);
+	mpriv.stream_file = malloc(1024);
 	if (getenv("GLC_FILE"))
-		snprintf(mpriv.glc.stream_file, 1023, getenv("GLC_FILE"), getpid());
+		snprintf(mpriv.stream_file, 1023, getenv("GLC_FILE"), getpid());
 	else
-		snprintf(mpriv.glc.stream_file, 1023, "pid-%d.glc", getpid());
+		snprintf(mpriv.stream_file, 1023, "pid-%d.glc", getpid());
 
-	mpriv.glc.log_file = malloc(1024);
-	if (getenv("GLC_LOG_FILE"))
-		snprintf(mpriv.glc.log_file, 1023, getenv("GLC_LOG_FILE"), getpid());
-	else
-		snprintf(mpriv.glc.log_file, 1023, "/dev/stderr");
+	if (getenv("GLC_LOG"))
+		glc_log_set_level(&mpriv.glc, atoi(getenv("GLC_LOG")));
 
-	if (getenv("GLC_LOG")) {
-		mpriv.glc.log_level = atoi(getenv("GLC_LOG"));
-		if (mpriv.glc.log_level >= 0)
-			mpriv.glc.flags |= GLC_LOG;
+	if (getenv("GLC_LOG_FILE")) {
+		log_file = malloc(1024);
+		snprintf(log_file, 1023, getenv("GLC_LOG_FILE"), getpid());
+		glc_log_open_file(&mpriv.glc, log_file);
+		free(log_file);
+		mpriv.flags |= MAIN_CUSTOM_LOG;
 	}
 
+	mpriv.sighandler = 0;
 	if (getenv("GLC_SIGHANDLER"))
 		mpriv.sighandler = atoi(getenv("GLC_SIGHANDLER"));
-	else
-		mpriv.sighandler = 0;
 
+	mpriv.uncompressed_size = 1024 * 1024 * 25;
 	if (getenv("GLC_UNCOMPRESSED_BUFFER_SIZE"))
 		mpriv.uncompressed_size = atoi(getenv("GLC_UNCOMPRESSED_BUFFER_SIZE")) * 1024 * 1024;
-	else
-		mpriv.uncompressed_size = 1024 * 1024 * 25;
 
+	mpriv.compressed_size = 1024 * 1024 * 50;
 	if (getenv("GLC_COMPRESSED_BUFFER_SIZE"))
 		mpriv.compressed_size = atoi(getenv("GLC_COMPRESSED_BUFFER_SIZE")) * 1024 * 1024;
-	else
-		mpriv.compressed_size = 1024 * 1024 * 50;
 
 	if (getenv("GLC_COMPRESS")) {
-		if (!strcmp(getenv("GLC_COMPRESS"), "lzo")) {
-			mpriv.compress = 1;
-			mpriv.glc.flags |= GLC_COMPRESS_LZO;
-		} else if (!strcmp(getenv("GLC_COMPRESS"), "quicklz")) {
-			mpriv.compress = 1;
-			mpriv.glc.flags |= GLC_COMPRESS_QUICKLZ;
-		}
-	} else {
-#ifdef __QUICKLZ
-		mpriv.compress = 1;
-		mpriv.glc.flags |= GLC_COMPRESS_QUICKLZ;
-#else
-# ifdef __LZO
-		mpriv.compress = 1;
-		mpriv.glc.flags |= GLC_COMPRESS_LZO;
-# endif
-#endif
+		if (!strcmp(getenv("GLC_COMPRESS"), "lzo"))
+			mpriv.flags |= MAIN_COMPRESS_LZO;
+		else if (!strcmp(getenv("GLC_COMPRESS"), "quicklz"))
+			mpriv.flags |= MAIN_COMPRESS_QUICKLZ;
+		else
+			mpriv.flags |= MAIN_COMPRESS_NONE;
 	}
 
 	return 0;
