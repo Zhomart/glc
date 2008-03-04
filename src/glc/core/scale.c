@@ -492,7 +492,6 @@ int scale_ctx_msg(scale_t scale, glc_ctx_message_t *ctx_msg, glc_thread_state_t 
 		if (ctx_msg->flags & GLC_CTX_DWORD_ALIGNED) {
 			if (ctx->row % 8 != 0)
 				ctx->row += 8 - ctx->row % 8;
-			ctx_msg->flags &= ~GLC_CTX_DWORD_ALIGNED;
 		}
 	}
 
@@ -515,8 +514,12 @@ int scale_ctx_msg(scale_t scale, glc_ctx_message_t *ctx_msg, glc_thread_state_t 
 			scale_generate_rgb_map(scale, ctx);
 		}
 
-		ctx_msg->flags &= ~GLC_CTX_BGRA; /* conversion is always done */
+		ctx_msg->flags &= ~GLC_CTX_BGRA; /* after scaling data is in BGR */
 		ctx_msg->flags |= GLC_CTX_BGR;
+
+		if (ctx->proc) /* dword alignment is lost if something is done to the data */
+			ctx_msg->flags &= ~GLC_CTX_DWORD_ALIGNED;
+
 		ctx_msg->w = ctx->rw;
 		ctx_msg->h = ctx->rh;
 		ctx->size = ctx->rw * ctx->rh * 3;
