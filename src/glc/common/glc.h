@@ -6,7 +6,7 @@
  */
 
 /* glc.h -- ALSA & OpenGL video capture tool
-  version 0.5.2, March 14th, 2008
+  version 0.5.3, April 4th, 2008
 
   Copyright (C) 2007-2008 Pyry Haulos <pyry.haulos@gmail.com>
 
@@ -33,6 +33,7 @@
  * \defgroup export export format filters
  * \defgroup play playback
  * \defgroup common common utilities and data structures
+ * \defgroup format glc stream format
  * \defgroup support optional support libraries
  */
 
@@ -56,63 +57,45 @@ extern "C" {
 /** always hide this object */
 #define __PRIVATE __attribute__ ((visibility ("hidden")))
 
+/**
+ *  \}
+ * \addtogroup format
+ *  \{
+ */
+
 /** stream version */
-#define GLC_STREAM_VERSION                  0x2
+#define GLC_STREAM_VERSION                  0x3
 /** file signature = "GLC" */
 #define GLC_SIGNATURE                0x00434c47
 /** glc version string */
-#define GLC_VERSION                     "0.5.2"
+#define GLC_VERSION                     "0.5.3"
 
 /** unsigned time in microseconds */
 typedef u_int64_t glc_utime_t;
 /** signed time in microseconds */
 typedef int64_t glc_stime_t;
 
-/** picture context number */
-typedef int32_t glc_ctx_i;
-/** audio stream number */
-typedef int32_t glc_audio_i;
+/** stream identifier type */
+typedef int32_t glc_stream_id_t;
 /** size, used in stream to ensure compability */
 typedef u_int64_t glc_size_t;
-/** sizeof(glc_size_t) */
-#define GLC_SIZE_SIZE                         8
 
 /** flags */
 typedef u_int32_t glc_flags_t;
 
 /**
- * \brief stream info structure
- *
- * Each glc stream file should start with stream info
- * structure. [name_size + date_size] sized data area should
- * follow stream info:
- *
- * First [name_size] bytes contain null-terminated application
- * path string. [date_size] bytes starting at [name_size]
- * contain null-terminated date string in UTC format.
+ *  \}
+ * \addtogroup common
+ *  \{
  */
-typedef struct {
-	/** file signature */
-	u_int32_t signature;
-	/** stream version */
-	u_int32_t version;
-	/** fps */
-	double fps;
-	/** flags */
-	glc_flags_t flags;
-	/** captured program pid */
-	u_int32_t pid;
-	/** size of captured program's name */
-	u_int32_t name_size;
-	/** size of date */
-	u_int32_t date_size;
-} glc_stream_info_t;
-/** sizeof(glc_stream_info_t) */
-#define GLC_STREAM_INFO_SIZE             32
 
+/** glc core */
 typedef struct glc_core_s* glc_core_t;
+/** glc utilities */
 typedef struct glc_util_s* glc_util_t;
+/** glc log */
 typedef struct glc_log_s* glc_log_t;
+/** glc state */
 typedef struct glc_state_s* glc_state_t;
 
 /**
@@ -142,20 +125,58 @@ typedef struct {
 /** debug */
 #define GLC_DEBUG                         4
 
+/**
+ *  \}
+ * \addtogroup format
+ *  \{
+ */
+
+/**
+ * \brief stream info structure
+ *
+ * Each glc stream file should start with stream info
+ * structure. [name_size + date_size] sized data area should
+ * follow stream info:
+ *
+ * First [name_size] bytes contain null-terminated application
+ * path string. [date_size] bytes starting at [name_size]
+ * contain null-terminated date string in UTC format.
+ */
+typedef struct {
+	/** file signature */
+	u_int32_t signature;
+	/** stream version */
+	u_int32_t version;
+	/** fps */
+	double fps;
+	/** flags */
+	glc_flags_t flags;
+	/** captured program pid */
+	u_int32_t pid;
+	/** size of captured program's name */
+	u_int32_t name_size;
+	/** size of date */
+	u_int32_t date_size;
+	/** reserved */
+	u_int64_t reserved1;
+	/** reserved */
+	u_int64_t reserved2;
+} __attribute__((packed)) glc_stream_info_t;
+
 /** stream message type */
-typedef char glc_message_type_t;
+typedef u_int8_t glc_message_type_t;
 /** end of stream */
 #define GLC_MESSAGE_CLOSE              0x01
-/** picture */
-#define GLC_MESSAGE_PICTURE            0x02
-/** picture context message */
-#define GLC_MESSAGE_CTX                0x03
+/** video data message */
+#define GLC_MESSAGE_VIDEO_FRAME        0x02
+/** video format message */
+#define GLC_MESSAGE_VIDEO_FORMAT       0x03
 /** lzo-compressed packet */
 #define GLC_MESSAGE_LZO                0x04
 /** audio format message */
 #define GLC_MESSAGE_AUDIO_FORMAT       0x05
 /** audio data message */
-#define GLC_MESSAGE_AUDIO              0x06
+#define GLC_MESSAGE_AUDIO_DATA         0x06
 /** quicklz-compressed packet */
 #define GLC_MESSAGE_QUICKLZ            0x07
 /** color correction information */
@@ -169,9 +190,7 @@ typedef char glc_message_type_t;
 typedef struct {
 	/** stream message type */
 	glc_message_type_t type;
-} glc_message_header_t;
-/** sizeof(glc_message_header_t) */
-#define GLC_MESSAGE_HEADER_SIZE           1
+} __attribute__((packed)) glc_message_header_t;
 
 /**
  * \brief lzo-compressed message header
@@ -181,9 +200,7 @@ typedef struct {
 	glc_size_t size;
 	/** original message header */
 	glc_message_header_t header;
-} glc_lzo_header_t;
-/** sizeof(glc_lzo_header_t) */
-#define GLC_LZO_HEADER_SIZE               9
+} __attribute__((packed)) glc_lzo_header_t;
 
 /**
  * \brief quicklz-compressed message header
@@ -193,98 +210,92 @@ typedef struct {
 	glc_size_t size;
 	/** original message header */
 	glc_message_header_t header;
-} glc_quicklz_header_t;
-/** sizeof(glc_quicklz_header_t) */
-#define GLC_QUICKLZ_HEADER_SIZE           9
+} __attribute__((packed)) glc_quicklz_header_t;
 
-/**
- * \brief picture header
- */
-typedef struct {
-	/** time */
-	glc_utime_t timestamp;
-	/** picture context number */
-	glc_ctx_i ctx;
-} glc_picture_header_t;
-/** sizeof(glc_picture_header_size) */
-#define GLC_PICTURE_HEADER_SIZE          12
-
-/**
- * \brief picture context message
- */
-typedef struct {
-	/** context flags */
-	glc_flags_t flags;
-	/** context number */
-	glc_ctx_i ctx;
-	/** width */
-	u_int32_t w;
-	/** height */
-	u_int32_t h;
-} glc_ctx_message_t;
-/** sizeof(glc_ctx_message_t) */
-#define GLC_CTX_MESSAGE_SIZE             16
-
-/** create context */
-#define GLC_CTX_CREATE                    1
-/** update existing context */
-#define GLC_CTX_UPDATE                    2
+/** video format type */
+typedef u_int8_t glc_video_format_t;
 /** 24bit BGR, last row first */
-#define GLC_CTX_BGR                       4
+#define GLC_VIDEO_BGR                   0x1
 /** 32bit BGRA, last row first */
-#define GLC_CTX_BGRA                      8
+#define GLC_VIDEO_BGRA                  0x2
 /** planar YV12 420jpeg */
-#define GLC_CTX_YCBCR_420JPEG            16
+#define GLC_VIDEO_YCBCR_420JPEG         0x3
+
+/**
+ * \brief video format message
+ */
+typedef struct {
+	/** identifier */
+	glc_stream_id_t id;
+	/** flags */
+	glc_flags_t flags;
+	/** width */
+	u_int32_t width;
+	/** height */
+	u_int32_t height;
+	/** format */
+	glc_video_format_t format;
+} __attribute__((packed)) glc_video_format_message_t;
+
 /** double-word aligned rows (GL_PACK_ALIGNMENT = 8) */
-#define GLC_CTX_DWORD_ALIGNED            32
+#define GLC_VIDEO_DWORD_ALIGNED         0x1
+
+/**
+ * \brief video data header
+ */
+typedef struct {
+	/** stream identifier */
+	glc_stream_id_t id;
+	/** time */
+	glc_utime_t time;
+} __attribute__((packed)) glc_video_frame_header_t;
+
+/** audio format type */
+typedef u_int8_t glc_audio_format_t;
+/** signed 16bit little-endian */
+#define GLC_AUDIO_S16_LE                0x1
+/** signed 24bit little-endian */
+#define GLC_AUDIO_S24_LE                0x2
+/** signed 32bit little-endian */
+#define GLC_AUDIO_S32_LE                0x3
 
 /**
  * \brief audio format message
  */
 typedef struct {
-	/** stream flags */
+	/** identifier */
+	glc_stream_id_t id;
+	/** flags */
 	glc_flags_t flags;
-	/** audio stream number */
-	glc_audio_i audio;
-	/** rate */
+	/** rate in Hz */
 	u_int32_t rate;
 	/** number of channels */
 	u_int32_t channels;
-} glc_audio_format_message_t;
-/** sizeof(glc_audio_format_message_t) */
-#define GLC_AUDIO_FORMAT_MESSAGE_SIZE    16
+	/** format */
+	glc_audio_format_t format;
+} __attribute__((packed)) glc_audio_format_message_t;
 
 /** interleaved */
-#define GLC_AUDIO_INTERLEAVED             1
-/** unknown/unsupported format */
-#define GLC_AUDIO_FORMAT_UNKNOWN          2
-/** signed 16bit little-endian */
-#define GLC_AUDIO_S16_LE                  4
-/** signed 24bit little-endian */
-#define GLC_AUDIO_S24_LE                  8
-/** signed 32bit little-endian */
-#define GLC_AUDIO_S32_LE                 16
+#define GLC_AUDIO_INTERLEAVED           0x1
 
 /**
  * \brief audio data message header
  */
 typedef struct {
+	/** stream identifier */
+	glc_stream_id_t id;
 	/** time */
-	glc_utime_t timestamp;
-	/** data size */
+	glc_utime_t time;
+	/** data size in bytes */
 	glc_size_t size;
-	/** audio stream number */
-	glc_audio_i audio;
-} glc_audio_header_t;
-/** sizeof(glc_audio_header_t) */
-#define GLC_AUDIO_HEADER_SIZE            20
+} __attribute__((packed)) glc_audio_data_header_t;
 
 /**
  * \brief color correction information message
  */
 typedef struct {
-	/** context */
-	glc_ctx_i ctx;
+	/** video stream identifier */
+	glc_stream_id_t id;
 	/** brightness */
 	float brightness;
 	/** contrast */
@@ -295,21 +306,17 @@ typedef struct {
 	float green;
 	/** blue gamma */
 	float blue;
-} glc_color_message_t;
-/** sizeof(glc_color_message_t) */
-#define GLC_COLOR_MESSAGE_SIZE           24
+} __attribute__((packed)) glc_color_message_t;
 
 /**
- * \brief container message
+ * \brief container message header
  */
 typedef struct {
 	/** size */
 	glc_size_t size;
 	/** header */
 	glc_message_header_t header;
-} glc_container_message_t;
-/** sizeof(glc_container_message_t) */
-#define GLC_CONTAINER_MESSAGE_SIZE        9
+} __attribute__((packed)) glc_container_message_header_t;
 
 #ifdef __cplusplus
 }

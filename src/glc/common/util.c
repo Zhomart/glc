@@ -78,6 +78,7 @@ int glc_util_info_create(glc_t *glc, glc_stream_info_t **stream_info,
 			 char **info_name, char **info_date)
 {
 	*stream_info = (glc_stream_info_t *) malloc(sizeof(glc_stream_info_t));
+	memset(*stream_info, 0, sizeof(glc_stream_info_t));
 
 	(*stream_info)->signature = GLC_SIGNATURE;
 	(*stream_info)->version = GLC_STREAM_VERSION;
@@ -135,7 +136,7 @@ int glc_util_write_end_of_stream(glc_t *glc, ps_buffer_t *to)
 		goto finish;
 	if ((ret = ps_packet_open(&packet, PS_PACKET_WRITE)))
 		goto finish;
-	if ((ret = ps_packet_write(&packet, &header, GLC_MESSAGE_HEADER_SIZE)))
+	if ((ret = ps_packet_write(&packet, &header, sizeof(glc_message_header_t))))
 		goto finish;
 	if ((ret = ps_packet_close(&packet)))
 		goto finish;

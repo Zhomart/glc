@@ -26,17 +26,19 @@ SET(CORE_SRC core/color.c
 	     core/scale.c
 	     core/ycbcr.c)
 
-SET(CAPTURE_HDR capture/audio_capture.h
-		capture/audio_hook.h
+SET(CAPTURE_HDR capture/alsa_capture.h
+		capture/alsa_hook.h
+		capture/audio_capture.h
 		capture/gl_capture.h)
-SET(CAPTURE_SRC capture/audio_capture.c
-		capture/audio_hook.c
+SET(CAPTURE_SRC capture/alsa_capture.c
+		capture/alsa_hook.c
+		capture/audio_capture.c
 		capture/gl_capture.c)
 
-SET(PLAY_HDR play/audio_play.h
+SET(PLAY_HDR play/alsa_play.h
 	     play/gl_play.h
 	     play/demux.h)
-SET(PLAY_SRC play/audio_play.c
+SET(PLAY_SRC play/alsa_play.c
 	     play/gl_play.c
 	     play/demux.c)
 
