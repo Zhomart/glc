@@ -46,6 +46,8 @@ struct file_s {
 	glc_flags_t flags;
 	glc_thread_t thread;
 	int fd;
+	int sync;
+	u_int32_t stream_version;
 };
 
 void file_finish_callback(void *ptr, int err);
@@ -58,6 +60,7 @@ int file_init(file_t *file, glc_t *glc)
 
 	(*file)->glc = glc;
 	(*file)->fd = -1;
+	(*file)->sync = 0;
 
 	(*file)->thread.flags = GLC_THREAD_READ;
 	(*file)->thread.ptr = *file;
@@ -74,6 +77,12 @@ int file_destroy(file_t file)
 	return 0;
 }
 
+int file_set_sync(file_t file, int sync)
+{
+	file->sync = sync;
+	return 0;
+}
+
 int file_open_target(file_t file, const char *filename)
 {
 	int fd, ret = 0;
@@ -81,9 +90,11 @@ int file_open_target(file_t file, const char *filename)
 		return EBUSY;
 
 	glc_log(file->glc, GLC_INFORMATION, "file",
-		 "opening %s for writing stream", filename);
+		 "opening %s for writing stream (%s)",
+		 filename,
+		 file->sync ? "sync" : "no sync");
 
-	fd = open(filename, O_CREAT | O_WRONLY | O_SYNC, 0644);
+	fd = open(filename, O_CREAT | O_WRONLY | (file->sync ? O_SYNC : 0), 0644);
 
 	if (fd == -1) {
 		glc_log(file->glc, GLC_ERROR, "file", "can't open %s: %s (%d)",
@@ -208,21 +219,16 @@ int file_read_callback(glc_thread_state_t *state)
 
 	if (state->header.type == GLC_MESSAGE_CONTAINER) {
 		container = (glc_container_message_header_t *) state->read_data;
-
-		if (write(file->fd, &container->header, sizeof(glc_message_header_t))
-		    != sizeof(glc_message_header_t))
-			goto err;
-		if (write(file->fd, &container->size, sizeof(glc_size_t)) != sizeof(glc_size_t))
-			goto err;
-		if (write(file->fd, &state->read_data[sizeof(glc_container_message_header_t)], container->size)
-		    != container->size)
+		if (write(file->fd, state->read_data, sizeof(glc_container_message_header_t) + container->size)
+		    != (sizeof(glc_container_message_header_t) + container->size))
 			goto err;
 	} else {
-		if (write(file->fd, &state->header, sizeof(glc_message_header_t))
-		    != sizeof(glc_message_header_t))
-			goto err;
+		/* emulate container message */
 		glc_size = state->read_size;
 		if (write(file->fd, &glc_size, sizeof(glc_size_t)) != sizeof(glc_size_t))
+			goto err;
+		if (write(file->fd, &state->header, sizeof(glc_message_header_t))
+		    != sizeof(glc_message_header_t))
 			goto err;
 		if (write(file->fd, state->read_data, state->read_size) != state->read_size)
 			goto err;
@@ -244,7 +250,7 @@ int file_open_source(file_t file, const char *filename)
 	glc_log(file->glc, GLC_INFORMATION, "file",
 		 "opening %s for reading stream", filename);
 
-	fd = open(filename, O_SYNC);
+	fd = open(filename, file->sync ? O_SYNC : 0);
 
 	if (fd == -1) {
 		glc_log(file->glc, GLC_ERROR, "file", "can't open %s: %s (%d)",
@@ -287,6 +293,22 @@ int file_close_source(file_t file)
 	return 0;	
 }
 
+int file_test_stream_version(u_int32_t version)
+{
+	/* current version is always supported */
+	if (version == GLC_STREAM_VERSION) {
+		return 0;
+	} else if (version == 0x03) {
+		/*
+		 0.5.5 was last version to use 0x03.
+		 Only change between 0x03 and 0x04 is header and
+		 size order in on-disk packet header.
+		*/
+		return 0;
+	}
+	return ENOTSUP;
+}
+
 int file_read_info(file_t file, glc_stream_info_t *info,
 		   char **info_name, char **info_date)
 {
@@ -307,12 +329,13 @@ int file_read_info(file_t file, glc_stream_info_t *info,
 		return EINVAL;
 	}
 
-	if (info->version != GLC_STREAM_VERSION) {
+	if (file_test_stream_version(info->version)) {
 		glc_log(file->glc, GLC_ERROR, "file",
-			 "unsupported stream version 0x%02x (0x%02x is supported)",
-			 info->version, GLC_STREAM_VERSION);
+			 "unsupported stream version 0x%02x", info->version);
 		return ENOTSUP;
 	}
+	glc_log(file->glc, GLC_INFORMATION, "file", "stream version 0x%02x", info->version);
+	file->stream_version = info->version; /* copy version */
 
 	if (info->name_size > 0) {
 		*info_name = (char *) malloc(info->name_size);
@@ -358,10 +381,19 @@ int file_read(file_t file, ps_buffer_t *to)
 	ps_packet_init(&packet, to);
 
 	do {
-		if (read(file->fd, &header, sizeof(glc_message_header_t)) != sizeof(glc_message_header_t))
-			goto send_eof;
-		if (read(file->fd, &glc_ps, sizeof(glc_size_t)) != sizeof(glc_size_t))
-			goto send_eof;
+		if (file->stream_version == 0x03) {
+			/* old order */
+			if (read(file->fd, &header, sizeof(glc_message_header_t)) != sizeof(glc_message_header_t))
+				goto send_eof;
+			if (read(file->fd, &glc_ps, sizeof(glc_size_t)) != sizeof(glc_size_t))
+				goto send_eof;
+		} else {
+			/* same header format as in container messages */
+			if (read(file->fd, &glc_ps, sizeof(glc_size_t)) != sizeof(glc_size_t))
+				goto send_eof;
+			if (read(file->fd, &header, sizeof(glc_message_header_t)) != sizeof(glc_message_header_t))
+				goto send_eof;
+		}
 
 		packet_size = glc_ps;
 

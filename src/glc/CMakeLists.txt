@@ -1,10 +1,32 @@
 
+SET(VERSION_HDR common/version.h)
+
+IF (NOT EXISTS ${VERSION_HDR})
+  SET(VERSION_HDR_DIR ${CMAKE_CURRENT_BINARY_DIR}/common)
+  SET(VERSION_HDR ${VERSION_HDR_DIR}/version.h)
+  ADD_EXECUTABLE(gen_version ../gen_version.c)
+  GET_TARGET_PROPERTY(GEN_VERSION gen_version LOCATION)
+
+  IF (EXISTS ${GIT_DIR}/index)
+    SET(VER_DEPENDS gen_version ${PROJECT_SOURCE_DIR}/CMakeLists.txt ${GIT_DIR}/index)
+  ELSE (EXISTS ${GIT_DIR}/index)
+    SET(VER_DEPENDS gen_version ${PROJECT_SOURCE_DIR}/CMakeLists.txt)
+  ENDIF (EXISTS ${GIT_DIR}/index)
+
+  ADD_CUSTOM_COMMAND(OUTPUT ${VERSION_HDR}
+		     COMMAND mkdir -p ${VERSION_HDR_DIR}
+		     COMMAND ${GEN_VERSION} "${VERSION_HDR}" "${GLC_VER}-git-" "${GIT_DIR}"
+		     DEPENDS ${VER_DEPENDS}
+		     COMMENT "Generating version.h")
+ENDIF (NOT EXISTS ${VERSION_HDR})
+
 SET(COMMON_HDR common/glc.h
 	       common/core.h
 	       common/log.h
 	       common/state.h
 	       common/thread.h
-	       common/util.h)
+	       common/util.h
+	       ${VERSION_HDR})
 SET(COMMON_SRC common/core.c
 	       common/log.c
 	       common/state.c
@@ -79,7 +101,14 @@ IF (LZO)
   	      ${PROJECT_SOURCE_DIR}/support/minilzo/minilzo.h)
 ENDIF (LZO)
 
-SET(GLC_CORE_SRC "${COMMON_HDR};${CORE_HDR};${COMMON_SRC};${CORE_SRC};${LZO_SRC};${QUICKLZ_SRC}")
+IF (LZJB)
+  ADD_DEFINITIONS(-D__LZJB)
+  INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/support/lzjb)
+  SET(LZJB_SRC ${PROJECT_SOURCE_DIR}/support/lzjb/lzjb.h
+  	       ${PROJECT_SOURCE_DIR}/support/lzjb/lzjb.c)
+ENDIF (LZJB)
+
+SET(GLC_CORE_SRC "${COMMON_HDR};${CORE_HDR};${COMMON_SRC};${CORE_SRC};${LZO_SRC};${QUICKLZ_SRC};${LZJB_SRC}")
 SET(GLC_CORE_LIB m ${PACKETSTREAM_LIBRARY})
 ADD_GLC_LIBRARY(glc-core "${GLC_CORE_SRC}" "${GLC_CORE_LIB}")
 

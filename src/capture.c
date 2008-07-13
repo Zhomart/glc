@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <dlfcn.h>
 
 struct glc_opt_s {
 	char short_name;
@@ -38,6 +39,8 @@ int main(int argc, char *argv[])
 	char *program = NULL;
 	char **program_args = NULL;
 	const char *library = "libglc-hook.so";
+	const char *core_library = "libglc-core.so";
+	const char *(*glc_version)();
 
 	struct glc_opt_s options[] = {
 		{'o', "out",			"GLC_FILE",			NULL},
@@ -49,8 +52,9 @@ int main(int argc, char *argv[])
 		{'e', "colorspace",		"GLC_COLORSPACE",		NULL},
 		{'k', "hotkey",			"GLC_HOTKEY",			NULL},
 		{'n', "lock-fps",		"GLC_LOCK_FPS",			 "1"},
-		{ 0 , "no-pbo",			"GLC_TRY_PBO",			 "0"},
+		{ 0 , "pbo",			"GLC_TRY_PBO",			 "1"},
 		{'z', "compression",		"GLC_COMPRESS",			NULL},
+		{ 0 , "sync",			"GLC_SYNC",			 "1"},
 		{ 0 , "byte-aligned",		"GLC_CAPTURE_DWORD_ALIGNED",	 "0"},
 		{'i', "draw-indicator",		"GLC_INDICATOR",		 "1"},
 		{'v', "log",			"GLC_LOG",			NULL},
@@ -67,8 +71,27 @@ int main(int argc, char *argv[])
 		{ 0 , NULL,			NULL,				NULL}
 	};
 
+	/* check that libglc-core.so can be loaded */
+	void *handle = dlopen(core_library, RTLD_LAZY);
+	if (handle == NULL) {
+		fprintf(stderr, "Can't find glc libraries\n");
+		return EXIT_FAILURE;
+	}
+	glc_version = (const char*(*)()) dlsym(handle, "glc_version");
+	if (glc_version == NULL) {
+		fprintf(stderr, "Invalid glc libraries\n");
+		return EXIT_FAILURE;
+	}
+
 	/* parse options until we encounter first invalid option or non-option argument */
 	for (optind = 1; optind < argc;) {
+		/* test if this is --version */
+		if ((!strcmp("--version", argv[optind])) | (!strcmp("-V", argv[optind]))) {
+			printf("glc version %s\n", glc_version());
+			dlclose(handle);
+			return EXIT_SUCCESS;
+		}
+
 		if ((ret = parse_arg(options, argc, argv, &optind))) {
 			if (ret == EINVAL)
 				goto usage;
@@ -77,7 +100,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	/* add glc-hook.so library to the LD_PRELOAD environment variable */
+	dlclose(handle);
+
+	/* add libglc-hook.so library to the LD_PRELOAD environment variable */
 	env_append("LD_PRELOAD", library, ':');
 
 	if (optind >= argc)
@@ -119,10 +144,11 @@ usage:
 	       "  -k, --hotkey=HOTKEY        capture hotkey, <Ctrl> and <Shift> modifiers are\n"
 	       "                               supported, default hotkey is '<Shift>F8'\n"
 	       "  -n, --lock-fps             lock fps when capturing\n"
-	       "      --no-pbo               don't try GL_ARB_pixel_buffer_object\n"
+	       "      --pbo                  use GL_ARB_pixel_buffer_object if available\n"
 	       "  -z, --compression=METHOD   compress stream using METHOD\n"
 	       "                               'none', 'quicklz' and 'lzo' are supported\n"
 	       "                               'quicklz' is used by default\n"
+	       "      --sync                 force synchronized write mode\n"
 	       "      --byte-aligned         use GL_PACK_ALIGNMENT 1 instead of 8\n"
 	       "  -i, --draw-indicator       draw indicator when capturing\n"
 	       "                               indicator does not work with -b 'front'\n"
@@ -147,6 +173,7 @@ usage:
 	       "                               default is 25 MiB\n"
 	       "      --unscaled=SIZE        unscaled picture stream buffer size in MiB,\n"
 	       "                               default is 25 MiB\n"
+	       "  -V, --version              print glc version and exit\n"
 	       "  -h, --help                 show this help\n");
 	return EXIT_FAILURE;
 }

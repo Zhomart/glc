@@ -48,6 +48,8 @@
 #include <sys/types.h>
 #include <semaphore.h>
 
+#include <glc/common/version.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -64,11 +66,9 @@ extern "C" {
  */
 
 /** stream version */
-#define GLC_STREAM_VERSION                  0x3
+#define GLC_STREAM_VERSION                  0x4
 /** file signature = "GLC" */
 #define GLC_SIGNATURE                0x00434c47
-/** glc version string */
-#define GLC_VERSION                     "0.5.5"
 
 /** unsigned time in microseconds */
 typedef u_int64_t glc_utime_t;
@@ -183,6 +183,8 @@ typedef u_int8_t glc_message_type_t;
 #define GLC_MESSAGE_COLOR              0x08
 /** plain container */
 #define GLC_MESSAGE_CONTAINER          0x09
+/** lzjb-compressed packet */
+#define GLC_MESSAGE_LZJB               0x0a
 
 /**
  * \brief stream message header
@@ -211,6 +213,16 @@ typedef struct {
 	/** original message header */
 	glc_message_header_t header;
 } __attribute__((packed)) glc_quicklz_header_t;
+
+/**
+ * \brief lzjb-compressed message header
+ */
+typedef struct {
+	/** uncompressed data size */
+	glc_size_t size;
+	/** original message header */
+	glc_message_header_t header;
+} __attribute__((packed)) glc_lzjb_header_t;
 
 /** video format type */
 typedef u_int8_t glc_video_format_t;

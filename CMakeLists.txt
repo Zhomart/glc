@@ -1,7 +1,7 @@
 PROJECT(glc)
 
 SET(GLC_SOVER 0)
-SET(GLC_VER 0.5.5)
+SET(GLC_VER 0.5.6)
 
 IF (NOT CMAKE_BUILD_TYPE)
   SET(CMAKE_BUILD_TYPE "Release")
@@ -12,6 +12,9 @@ OPTION(QUICKLZ
        ON)
 OPTION(LZO
        "LZO support"
+       ON)
+OPTION(LZJB
+       "LZJB support"
        ON)
 OPTION(BINARIES
        "Build and install glc-capture and glc-play"
@@ -26,7 +29,11 @@ OPTION(SCRIPTS
        "Install sample scripts."
        OFF)
 
-SUBDIRS(src)
+IF (NOT GIT_DIR)
+  SET(GIT_DIR ${PROJECT_SOURCE_DIR}/.git)
+ENDIF (NOT GIT_DIR)
+
+ADD_SUBDIRECTORY(src)
 
 IF (SCRIPTS)
   IF (UNIX)

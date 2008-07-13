@@ -74,6 +74,15 @@ typedef struct file_s* file_t;
 __PUBLIC int file_init(file_t *file, glc_t *glc);
 
 /**
+ * \brief set sync mode
+ * \note this must be set before opening file
+ * \param file file object
+ * \param sync 0 = no forced synchronization, 1 = force writing immediately to device
+ * \return 0 on success otherwise an error code
+ */
+__PUBLIC int file_set_sync(file_t file, int sync);
+
+/**
  * \brief open file for writing
  * \note this calls file_set_target()
  * \param file file object
@@ -165,6 +174,13 @@ __PUBLIC int file_close_source(file_t file);
  */
 __PUBLIC int file_read_info(file_t file, glc_stream_info_t *info,
 			    char **info_name, char **info_date);
+
+/**
+ * \brief test if given stream version is supported
+ * \param version version to test
+ * \return 0 if is supported, otherwise ENOTSUP
+ */
+__PUBLIC int file_test_stream_version(u_int32_t version);
 
 /**
  * \brief read stream from file and write it into buffer
