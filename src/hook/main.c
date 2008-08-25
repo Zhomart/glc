@@ -39,6 +39,7 @@
 #define MAIN_CUSTOM_LOG           0x10
 #define MAIN_SYNC                 0x20
 #define MAIN_COMPRESS_LZJB        0x40
+#define MAIN_START                0x80
 
 struct main_private_s {
 	glc_t glc;
@@ -51,12 +52,16 @@ struct main_private_s {
 	file_t file;
 	pack_t pack;
 
+	unsigned int capture;
+	const char *stream_file_fmt;
 	char *stream_file;
 
 	int sighandler;
 	void (*sigint_handler)(int);
 	void (*sighup_handler)(int);
 	void (*sigterm_handler)(int);
+
+	glc_utime_t stop_time;
 };
 
 __PRIVATE glc_lib_t lib = {NULL, /* dlopen */
@@ -66,7 +71,8 @@ __PRIVATE glc_lib_t lib = {NULL, /* dlopen */
 			   0, /* initialized */
 			   0, /* running */
 			   PTHREAD_MUTEX_INITIALIZER, /* init_lock */
-			   0, /* flags */ };
+			   0, /* flags */
+			   };
 __PRIVATE struct main_private_s mpriv;
 
 __PRIVATE int init_buffers();
@@ -74,12 +80,17 @@ __PRIVATE void lib_close();
 __PRIVATE int load_environ();
 __PRIVATE void signal_handler(int signum);
 __PRIVATE void get_real_libc_dlsym();
+__PRIVATE void reload_stream_callback(void *arg);
 
 void init_glc()
 {
 	struct sigaction new_sighandler, old_sighandler;
 	int ret;
 	mpriv.flags = 0;
+	mpriv.capture = 0;
+	mpriv.stop_time = 0;
+	mpriv.stream_file = NULL;
+	mpriv.stream_file_fmt = "%app%-%pid%-%capture%.glc";
 
 	if ((ret = pthread_mutex_lock(&lib.init_lock)))
 		goto err;
@@ -105,16 +116,15 @@ void init_glc()
 	if ((ret = x11_init(&mpriv.glc)))
 		goto err;
 
+	/* get current time for correct timediff */
+	mpriv.stop_time = glc_state_time(&mpriv.glc);
+
 	glc_util_log_info(&mpriv.glc);
 
 	lib.initialized = 1; /* we've technically done */
 
-	if (lib.flags & LIB_CAPTURING) {
-		if ((ret = start_glc()))
-			goto err;
-		alsa_capture_start_all();
-		opengl_capture_start();
-	}
+	if (mpriv.flags & MAIN_START)
+		start_capture();
 
 	atexit(lib_close);
 
@@ -170,10 +180,135 @@ int init_buffers()
 	return 0;
 }
 
-int start_glc()
+int open_stream()
 {
 	glc_stream_info_t *stream_info;
 	char *info_name, *info_date;
+	int ret;
+
+	glc_util_info_create(&mpriv.glc, &stream_info, &info_name, &info_date);
+	mpriv.stream_file = glc_util_format_filename(mpriv.stream_file_fmt, mpriv.capture);
+
+	if ((ret = file_set_sync(mpriv.file, (mpriv.flags & MAIN_SYNC) ? 1 : 0)))
+		return ret;
+	if ((ret = file_open_target(mpriv.file, mpriv.stream_file)))
+		return ret;
+	if ((ret = file_write_info(mpriv.file, stream_info,
+				   info_name, info_date)))
+		return ret;
+	free(stream_info);
+	free(info_name);
+	free(info_date);
+
+	return 0;
+}
+
+int close_stream()
+{
+	int ret;
+
+	if (mpriv.stream_file != NULL) {
+		free(mpriv.stream_file);
+		mpriv.stream_file = NULL;
+	}
+
+	if ((ret = file_close_target(mpriv.file)))
+		return ret;
+
+	return 0;
+}
+
+void reload_stream_callback(void *arg)
+{
+	/* this is called when callback request arrives to file object */
+	int ret;
+
+	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "reloading stream");
+
+	if ((ret = file_write_eof(mpriv.file)))
+		goto err;
+	if ((ret = close_stream()))
+		goto err;
+	if ((ret = open_stream()))
+		goto err;
+	if ((ret = file_write_state(mpriv.file)))
+		goto err;
+
+	return;
+err:
+	glc_log(&mpriv.glc, GLC_ERROR, "main",
+		"can't reload stream: %s (%d)\n", strerror(ret), ret);
+}
+
+int reload_stream()
+{
+	glc_message_header_t hdr;
+	hdr.type = GLC_CALLBACK_REQUEST;
+	glc_callback_request_t callback_req;
+	callback_req.arg = NULL;
+
+	/* synchronize with opengl top buffer */
+	return opengl_push_message(&hdr, &callback_req, sizeof(glc_callback_request_t));
+}
+
+void increment_capture()
+{
+	mpriv.capture++;
+	mpriv.stop_time = 0;
+}
+
+int start_capture()
+{
+	int ret;
+	if (lib.flags & LIB_CAPTURING)
+		return EAGAIN;
+
+	if (!lib.running) {
+		if ((ret = start_glc()))
+			goto err;
+	}
+
+	if ((ret = alsa_capture_start_all()))
+		goto err;
+	if ((ret = opengl_capture_start()))
+		goto err;
+
+	glc_state_time_add_diff(&mpriv.glc, glc_state_time(&mpriv.glc) - mpriv.stop_time);
+	lib.flags |= LIB_CAPTURING;
+	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "started capturing");
+
+	return 0;
+err:
+	glc_log(&mpriv.glc, GLC_ERROR, "main",
+		"can't start capturing: %s (%d)", strerror(ret), ret);
+	return ret;
+}
+
+int stop_capture()
+{
+	int ret;
+
+	if (!(lib.flags & LIB_CAPTURING))
+		return EAGAIN;
+
+	if ((ret = alsa_capture_stop_all()))
+		goto err;
+	if ((ret = opengl_capture_stop()))
+		goto err;
+
+	lib.flags &= ~LIB_CAPTURING;
+	mpriv.stop_time = glc_state_time(&mpriv.glc);
+	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "stopped capturing");
+
+	return 0;
+err:
+	glc_log(&mpriv.glc, GLC_ERROR, "main",
+		"can't stop capturing: %s (%d)", strerror(ret), ret);
+	return ret;
+}
+
+int start_glc()
+{
 	int ret;
 
 	if (lib.running)
@@ -185,19 +320,13 @@ int start_glc()
 	glc_log(&mpriv.glc, GLC_INFORMATION, "main", "starting glc");
 
 	/* initialize file & write stream info */
-	glc_util_info_create(&mpriv.glc, &stream_info, &info_name, &info_date);
 	if ((ret = file_init(&mpriv.file, &mpriv.glc)))
 		return ret;
-	if ((ret = file_set_sync(mpriv.file, (mpriv.flags & MAIN_SYNC) ? 1 : 0)))
+	/* NOTE at the moment only reload is used as callback */
+	if ((ret = file_set_callback(mpriv.file, &reload_stream_callback)))
 		return ret;
-	if ((ret = file_open_target(mpriv.file, mpriv.stream_file)))
+	if ((ret = open_stream()))
 		return ret;
-	if ((ret = file_write_info(mpriv.file, stream_info,
-				   info_name, info_date)))
-		return ret;
-	free(stream_info);
-	free(info_name);
-	free(info_date);
 
 	if (!(mpriv.flags & MAIN_COMPRESS_NONE)) {
 		if ((ret = file_write_process_start(mpriv.file, mpriv.compressed)))
@@ -286,7 +415,7 @@ void lib_close()
 			pack_destroy(mpriv.pack);
 		}
 		file_write_process_wait(mpriv.file);
-		file_close_target(mpriv.file);
+		close_stream();
 		file_destroy(mpriv.file);
 	}
 
@@ -317,14 +446,11 @@ int load_environ()
 
 	if (getenv("GLC_START")) {
 		if (atoi(getenv("GLC_START")))
-			lib.flags |= LIB_CAPTURING;
+			mpriv.flags |= MAIN_START;
 	}
 
-	mpriv.stream_file = malloc(1024);
 	if (getenv("GLC_FILE"))
-		snprintf(mpriv.stream_file, 1023, getenv("GLC_FILE"), getpid());
-	else
-		snprintf(mpriv.stream_file, 1023, "pid-%d.glc", getpid());
+		mpriv.stream_file_fmt = getenv("GLC_FILE");
 
 	if (getenv("GLC_LOG"))
 		glc_log_set_level(&mpriv.glc, atoi(getenv("GLC_LOG")));

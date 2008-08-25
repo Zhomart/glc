@@ -6,7 +6,7 @@
  */
 
 /* glc.h -- ALSA & OpenGL video capture tool
-  version 0.5.5, April 20th, 2008
+  version 0.5.7, August 25th, 2008
 
   Copyright (C) 2007-2008 Pyry Haulos <pyry.haulos@gmail.com>
 
@@ -82,6 +82,9 @@ typedef u_int64_t glc_size_t;
 
 /** flags */
 typedef u_int32_t glc_flags_t;
+
+/** callback request function prototype */
+typedef void (*callback_request_func_t)(void *arg);
 
 /**
  *  \}
@@ -185,6 +188,8 @@ typedef u_int8_t glc_message_type_t;
 #define GLC_MESSAGE_CONTAINER          0x09
 /** lzjb-compressed packet */
 #define GLC_MESSAGE_LZJB               0x0a
+/** callback request */
+#define GLC_CALLBACK_REQUEST           0x0b
 
 /**
  * \brief stream message header
@@ -232,6 +237,8 @@ typedef u_int8_t glc_video_format_t;
 #define GLC_VIDEO_BGRA                  0x2
 /** planar YV12 420jpeg */
 #define GLC_VIDEO_YCBCR_420JPEG         0x3
+/** 24bit RGB, last row first */
+#define GLC_VIDEO_RGB                   0x4
 
 /**
  * \brief video format message
@@ -329,6 +336,19 @@ typedef struct {
 	/** header */
 	glc_message_header_t header;
 } __attribute__((packed)) glc_container_message_header_t;
+
+/**
+ * \brief callback request
+ * \note only for program internal use (not in on-disk stream)
+ * \note may change without stream version bump
+ * This message doesn't specify callback address but only data
+ * pointer. Callbacks are set per-module basis. Useful for
+ * synchronizing.
+ */
+typedef struct {
+	/** pointer to data */
+	void *arg;
+} glc_callback_request_t;
 
 #ifdef __cplusplus
 }

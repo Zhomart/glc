@@ -183,4 +183,100 @@ int glc_util_log_version(glc_t *glc)
 	return 0;
 }
 
+char *glc_util_str_replace(const char *str, const char *find, const char *replace)
+{
+	/* calculate destination string size */
+	size_t replace_len = strlen(replace);
+	size_t find_len = strlen(find);
+	ssize_t copy, add_per_replace = (ssize_t) replace_len - (ssize_t) find_len;
+	ssize_t size = strlen(str) + 1;
+	const char* p = str;
+	while ((p = strstr(p, find)) != NULL) {
+		size += add_per_replace;
+		p = &p[find_len];
+	}
+
+	if (size < 0)
+		return NULL;
+
+	char *result = (char *) malloc(size * sizeof(char));
+	p = str;
+	const char *s = str;
+	char *r = result;
+
+	while ((p = strstr(p, find)) != NULL) {
+		copy = (size_t) p - (size_t) s; /* naughty casts */
+
+		/* copy string before previous replace (or start) */
+		if (copy > 0) {
+			memcpy(r, s, copy * sizeof(char));
+			r = &r[copy];
+		}
+
+		/* copy replace string */
+		memcpy(r, replace, replace_len * sizeof(char));
+		r = &r[replace_len];
+
+		p = &p[find_len];
+		s = p;
+	}
+
+	copy = (size_t) str + (size_t) strlen(str) - (size_t) s;
+	if (copy > 0)
+		memcpy(r, s, copy * sizeof(char));
+
+	result[size-1] = '\0';
+
+	return result;
+}
+
+char *glc_util_format_filename(const char *fmt, unsigned int capture)
+{
+	char tmp[256];
+	size_t fmt_size = strlen(fmt) + 1;
+	char *old, *filename = (char *) malloc(sizeof(char) * fmt_size);
+	memcpy(filename, fmt, fmt_size);
+
+	/* %app% */
+	if (strstr(filename, "%app%") != NULL) {
+		/** \todo nicer way to determine */
+		char *path;
+		u_int32_t path_size;
+		glc_util_app_name(NULL, &path, &path_size);
+		char *p, *app = path;
+		while ((p = strstr(app, "/")) != NULL) {
+			p++;
+			app = p;
+		}
+
+		old = filename;
+		filename = glc_util_str_replace(old, "%app%", app);
+		free(path);
+		free(old);
+	}
+
+#define NUM_REPLACE(tag, fmt, val) \
+	if (strstr(filename, tag) != NULL) { \
+		snprintf(tmp, sizeof(tmp), fmt, (val)); \
+		old = filename; \
+		filename = glc_util_str_replace(old, tag, tmp); \
+		free(old); \
+	}
+
+	/* time */
+	time_t t = time(NULL);
+	struct tm *tm = localtime(&t);
+
+	NUM_REPLACE("%pid%", "%d", getpid())
+	NUM_REPLACE("%capture%", "%u", capture)
+	NUM_REPLACE("%year%", "%04d", tm->tm_year + 1900)
+	NUM_REPLACE("%month%", "%02d", tm->tm_mon + 1)
+	NUM_REPLACE("%day%", "%02d", tm->tm_mday)
+	NUM_REPLACE("%hour%", "%02d", tm->tm_hour)
+	NUM_REPLACE("%min%", "%02d", tm->tm_min)
+	NUM_REPLACE("%sec%", "%02d", tm->tm_sec)
+
+	return filename;
+}
+
 /**  \} */
